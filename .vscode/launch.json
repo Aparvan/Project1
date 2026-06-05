@@ -10,6 +10,11 @@
             "python": "${workspaceFolder}/venv/Scripts/python.exe",
             "env": {
                 "FLASK_ENV": "development"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "Running on (http://\\S+)",
+                "uriFormat": "%s"
             }
         }
     ]
