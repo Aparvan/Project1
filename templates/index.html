@@ -223,7 +223,22 @@
 
             <!-- TAB 3: PROXIMITY CAMS (WITH AUTO-SCANNING HUD) -->
             <section id="camera" class="page-section">
-                <div class="multi-cam-container">
+                <!-- View Mode Toggle Panel -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; background:var(--bg-glass); border:1px solid var(--border-glass); padding:0.75rem 1.25rem; border-radius:10px;">
+                    <div class="hud-mono" style="color:var(--accent-cyan); font-weight:600; letter-spacing:1px; font-size:0.9rem;">PROXIMITY CAMERA NODE OVERVIEW</div>
+                    <div style="display:flex; gap:0.75rem;">
+                        <button id="btnViewSingle" class="btn-action active-cam" style="padding:0.4rem 0.8rem; font-size:0.78rem;" onclick="setCamViewMode('single')">
+                            <span class="material-icons-outlined" style="vertical-align:middle; margin-right:0.35rem; font-size:1rem;">aspect_ratio</span>Single Feed Focus
+                        </button>
+                        <button id="btnViewGrid" class="btn-action" style="padding:0.4rem 0.8rem; font-size:0.78rem;" onclick="setCamViewMode('grid')">
+                            <span class="material-icons-outlined" style="vertical-align:middle; margin-right:0.35rem; font-size:1rem;">grid_view</span>Multi-Cam Grid
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Single Feed Focus Layout -->
+                <div id="camSingleViewContainer">
+                    <div class="multi-cam-container">
                     <div class="card camera-feed-card">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                             <h3 class="hud-mono" id="activeFeedTitle" style="color:var(--accent-cyan);">WATERING HOLE FEED // CAM-01</h3>
@@ -336,6 +351,159 @@
                             </div>
                             <div id="liveScanBody" style="font-size:0.85rem;">
                                 <div style="color:var(--text-muted); text-align:center; padding:1.5rem 0;">Webcam feed inactive or awaiting telemetry logs.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Closing Single View Container -->
+                </div>
+
+                <!-- Multi-Cam Grid Layout Container -->
+                <div id="camGridViewContainer" style="display: none;">
+                    <div class="camera-grid-layout">
+                        <!-- Webcam Operator Feed Card -->
+                        <div class="card grid-feed-card" style="border-color: var(--accent-cyan); position: relative;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--accent-cyan); margin:0;">LOCAL OPERATOR CONSOLE // WEBCAM</h4>
+                                <span class="badge-status info" style="font-size:0.6rem; padding:0.15rem 0.35rem;">REAL-TIME</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <video id="gridWebcam" autoplay playsinline muted style="display:none; width: 100%; height: 100%; object-fit: cover;"></video>
+                                <canvas id="gridCanvas" style="display:none;"></canvas>
+                                <svg id="gridSvgOverlay" class="svg-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" style="display:none; z-index: 2; position: absolute; top:0; left:0; width:100%; height:100%;"></svg>
+                                
+                                <div id="gridWebcamPlaceholder" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100%; color:var(--text-muted); text-align:center; padding:1.5rem; border:1px dashed var(--border-glass); border-radius:6px; background: rgba(0,0,0,0.35);">
+                                    <span class="material-icons-outlined" style="font-size:2.5rem; margin-bottom:0.5rem; color:var(--accent-cyan);">videocam_off</span>
+                                    <div class="hud-mono" style="font-size:0.75rem; margin-bottom:0.75rem;">WEBCAM INACTIVE</div>
+                                    <button class="btn-primary" style="padding:0.4rem 0.8rem; font-size:0.75rem;" onclick="toggleGridWebcam(true)">Start Live Feed</button>
+                                </div>
+
+                                <button id="btnStopGridWebcam" class="btn-danger" style="display:none; position:absolute; bottom:10px; right:10px; z-index:5; padding:0.3rem 0.6rem; font-size:0.7rem;" onclick="toggleGridWebcam(false)">Disconnect</button>
+                                
+                                <div class="cam-hud-overlay" style="z-index: 4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: REALTIME<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: 0.0000, 0.0000</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cam-01 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">WATERING HOLE FEED // CAM-01</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-01" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-01">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: -1.2921, 34.8219</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Cam-02 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">NORTH STATION FEED // CAM-02</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-02" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-02">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: -1.3524, 34.8510</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cam-03 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">DEEP CANOPY FEED // CAM-03</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-03" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-03">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: -1.2750, 34.8012</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cam-04 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">CORBETT TIGER FEED // CAM-04</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-04" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-04">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: 29.5302, 78.7747</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cam-05 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">AMAZON CANOPY FEED // CAM-05</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-05" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-05">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: -3.4653, -62.2159</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cam-06 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">YELLOWSTONE GRIZZLY FEED // CAM-06</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-06" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-06">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: 44.4280, -110.5885</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cam-07 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">KANGAROO ISLAND FEED // CAM-07</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-07" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-07">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: -35.7752, 137.2142</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cam-08 -->
+                        <div class="card grid-feed-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <h4 class="hud-mono" style="font-size:0.85rem; color:var(--text-secondary); margin:0;">SVALBARD OUTPOST FEED // CAM-08</h4>
+                                <span class="badge-status success" style="font-size:0.6rem; padding:0.15rem 0.35rem;">SIMULATING</span>
+                            </div>
+                            <div class="camera-feed-box" style="position:relative; aspect-ratio:4/3; width:100%; border-radius:6px; overflow:hidden; background:#000;">
+                                <img class="grid-feed-img" id="gridImg-Cam-08" src="" style="width:100%; height:100%; object-fit:cover; display:block;" alt="Cam-08">
+                                <div class="cam-hud-overlay" style="z-index:4;">
+                                    <div class="hud-top-left hud-mono" style="font-size:0.65rem;">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                    <div class="hud-bottom-left hud-mono" style="font-size:0.65rem;">GPS: 78.2232, 15.6267</div>
+                                </div>
                             </div>
                         </div>
                     </div>

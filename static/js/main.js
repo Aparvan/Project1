@@ -19,6 +19,9 @@ let currentUserName = "";
 let spokenAlertsCooldown = {}; // {label: timestamp}
 let localWebcamStream = null;
 let webcamAnalysisInterval = null;
+let gridWebcamStream = null;
+let gridWebcamAnalysisInterval = null;
+let currentViewMode = "single";
 
 
 // Sanctuary GPS Coordinates mapping
@@ -178,6 +181,8 @@ function initNavigation() {
             // Stop webcam stream if leaving the Cams tab
             if (targetTab !== "camera") {
                 toggleWebcam(false);
+                toggleGridWebcam(false);
+                setCamViewMode('single');
             }
 
             // Load data dynamically
@@ -1256,6 +1261,200 @@ function drawWebcamDetections(detections) {
                 tooltip.style.display = "none";
             }
         });
+    });
+}
+
+// -------------------------------------------------------------
+// MULTI-CAM GRID VIEW & OPERATOR WEBCAM CONTROLS
+// -------------------------------------------------------------
+function setCamViewMode(mode) {
+    currentViewMode = mode;
+    const btnSingle = document.getElementById("btnViewSingle");
+    const btnGrid = document.getElementById("btnViewGrid");
+    const singleContainer = document.getElementById("camSingleViewContainer");
+    const gridContainer = document.getElementById("camGridViewContainer");
+
+    if (mode === "grid") {
+        if (btnSingle) btnSingle.classList.remove("active-cam");
+        if (btnGrid) btnGrid.classList.add("active-cam");
+        if (singleContainer) singleContainer.style.display = "none";
+        if (gridContainer) gridContainer.style.display = "block";
+
+        // Stop single camera webcam if active
+        toggleWebcam(false);
+
+        // Turn on simulated stream sources for grid
+        Object.keys(CAMERA_COORDINATES).forEach(key => {
+            const gridImg = document.getElementById(`gridImg-${key}`);
+            if (gridImg) {
+                gridImg.src = `/webcam_feed?camera=${key}`;
+            }
+        });
+
+        // Also start the grid webcam auto-scan for wow-factor
+        toggleGridWebcam(true);
+    } else {
+        if (btnSingle) btnSingle.classList.add("active-cam");
+        if (btnGrid) btnGrid.classList.remove("active-cam");
+        if (singleContainer) singleContainer.style.display = "block";
+        if (gridContainer) gridContainer.style.display = "none";
+
+        // Turn off grid webcam stream
+        toggleGridWebcam(false);
+
+        // Clear simulated stream sources to avoid overloading server
+        Object.keys(CAMERA_COORDINATES).forEach(key => {
+            const gridImg = document.getElementById(`gridImg-${key}`);
+            if (gridImg) {
+                gridImg.src = "";
+            }
+        });
+    }
+}
+
+function toggleGridWebcam(active) {
+    const video = document.getElementById("gridWebcam");
+    const placeholder = document.getElementById("gridWebcamPlaceholder");
+    const btnStop = document.getElementById("btnStopGridWebcam");
+    const svgOverlay = document.getElementById("gridSvgOverlay");
+
+    if (active) {
+        if (placeholder) placeholder.style.display = "none";
+        if (btnStop) btnStop.style.display = "block";
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(mediaStream => {
+                    gridWebcamStream = mediaStream;
+                    if (video) {
+                        video.srcObject = mediaStream;
+                        video.style.display = "block";
+                        video.muted = true;
+                        video.play().catch(err => console.warn("Error playing grid video:", err));
+                    }
+                    if (svgOverlay) svgOverlay.style.display = "block";
+
+                    startGridWebcamAnalysisLoop();
+                })
+                .catch(err => {
+                    console.warn("Grid webcam access denied:", err);
+                    toggleGridWebcam(false);
+                });
+        } else {
+            console.warn("Webcam media API not supported or blocked in insecure context.");
+            toggleGridWebcam(false);
+        }
+    } else {
+        if (gridWebcamStream) {
+            gridWebcamStream.getTracks().forEach(track => track.stop());
+            gridWebcamStream = null;
+        }
+        if (gridWebcamAnalysisInterval) {
+            clearInterval(gridWebcamAnalysisInterval);
+            gridWebcamAnalysisInterval = null;
+        }
+
+        if (video) {
+            video.srcObject = null;
+            video.style.display = "none";
+        }
+        if (svgOverlay) {
+            svgOverlay.innerHTML = "";
+            svgOverlay.style.display = "none";
+        }
+        if (placeholder) placeholder.style.display = "flex";
+        if (btnStop) btnStop.style.display = "none";
+    }
+}
+
+function startGridWebcamAnalysisLoop() {
+    if (gridWebcamAnalysisInterval) {
+        clearInterval(gridWebcamAnalysisInterval);
+    }
+
+    const video = document.getElementById("gridWebcam");
+    const canvas = document.getElementById("gridCanvas");
+    if (!video || !canvas) return;
+
+    const ctx = canvas.getContext("2d");
+
+    gridWebcamAnalysisInterval = setInterval(() => {
+        if (video.paused || video.ended || !gridWebcamStream) return;
+        if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(blob => {
+            if (!blob || !gridWebcamStream) return;
+            const modelVal = document.getElementById("webcamModelSelect")?.value || "yolov8n";
+            
+            const formData = new FormData();
+            formData.append("image", blob, "webcam_frame.jpg");
+            formData.append("camera_id", "Operator");
+            formData.append("model", modelVal);
+            formData.append("log_to_db", "false");
+
+            fetch("/api/webcam_detect", {
+                method: "POST",
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && gridWebcamStream) {
+                    drawGridWebcamDetections(data.detections);
+                    
+                    // Trigger alarm overlay if dangerous predator is detected on user webcam
+                    if (data.detections && data.detections.length > 0) {
+                        const dangerous = data.detections.filter(d => ['bear', 'elephant', 'tiger', 'lion', 'crocodile', 'snake', 'leopard', 'wolf'].includes(d.label.toLowerCase()));
+                        if (dangerous.length > 0) {
+                            triggerDangerAlarm(dangerous[0]);
+                        }
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("Grid webcam detection upload failed:", err);
+            });
+        }, "image/jpeg", 0.7);
+    }, 450);
+}
+
+function drawGridWebcamDetections(detections) {
+    const overlay = document.getElementById("gridSvgOverlay");
+    if (!overlay) return;
+    overlay.innerHTML = "";
+
+    detections.forEach((det, idx) => {
+        const color = getLabelColor(det.label);
+        const [x_min, y_min, x_max, y_max] = det.box;
+
+        const x = x_min * 100;
+        const y = y_min * 100;
+        const w = (x_max - x_min) * 100;
+        const h = (y_max - y_min) * 100;
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", x);
+        rect.setAttribute("y", y);
+        rect.setAttribute("width", w);
+        rect.setAttribute("height", h);
+        rect.setAttribute("class", "bbox-rect");
+        rect.setAttribute("stroke", color);
+        rect.setAttribute("fill", "rgba(0,0,0,0)");
+        rect.setAttribute("id", `grid-webcam-rect-${idx}`);
+        overlay.appendChild(rect);
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", x);
+        text.setAttribute("y", y - 2 > 0 ? y - 2 : y + 10);
+        text.setAttribute("class", "bbox-label");
+        text.setAttribute("fill", "white");
+        const categoryStr = det.intelligence ? ` [${det.intelligence.category}]` : '';
+        text.textContent = `${det.label.toUpperCase()}${categoryStr} ${(det.confidence * 100).toFixed(0)}%`;
+        overlay.appendChild(text);
     });
 }
 
