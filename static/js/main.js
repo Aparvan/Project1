@@ -979,42 +979,47 @@ function toggleWebcam(active) {
         if (feedBox) feedBox.classList.add("webcam-active");
         if (radarSweep) radarSweep.style.display = "block";
 
-        // Always initiate browser-side real-time webcam access for whatever camera is selected
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(mediaStream => {
-                localWebcamStream = mediaStream;
-                if (browserWebcam) {
-                    browserWebcam.srcObject = mediaStream;
-                    browserWebcam.style.display = "block";
-                }
-                if (browserSvgOverlay) {
-                    browserSvgOverlay.style.display = "block";
-                }
-                if (stream) {
-                    stream.style.display = "none";
-                }
+        // Always initiate browser-side real-time webcam access for whatever camera is selected if supported
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(mediaStream => {
+                    localWebcamStream = mediaStream;
+                    if (browserWebcam) {
+                        browserWebcam.srcObject = mediaStream;
+                        browserWebcam.style.display = "block";
+                    }
+                    if (browserSvgOverlay) {
+                        browserSvgOverlay.style.display = "block";
+                    }
+                    if (stream) {
+                        stream.style.display = "none";
+                    }
 
-                const modelVal = document.getElementById("webcamModelSelect")?.value || "yolov8n";
-                const modelDisplay = modelVal === "yolov8m" ? "YOLOv8-MEDIUM" : (modelVal === "yolov8s" ? "YOLOv8-SMALL" : "YOLOv8-NANO");
-                const fpsDisplay = modelVal === "yolov8m" ? "0.8" : (modelVal === "yolov8s" ? "1.5" : "2.5");
+                    const modelVal = document.getElementById("webcamModelSelect")?.value || "yolov8n";
+                    const modelDisplay = modelVal === "yolov8m" ? "YOLOv8-MEDIUM" : (modelVal === "yolov8s" ? "YOLOv8-SMALL" : "YOLOv8-NANO");
+                    const fpsDisplay = modelVal === "yolov8m" ? "0.8" : (modelVal === "yolov8s" ? "1.5" : "2.5");
 
-                const statusText = document.getElementById("camHudStatus");
-                if (statusText) {
-                    statusText.innerHTML = `SYS.TRACKING: ACTIVE (WEBCAM)<br>MODEL: ${modelDisplay}`;
-                }
-                
-                const fpsText = document.getElementById("camHudFps");
-                if (fpsText) {
-                    fpsText.innerText = `FPS: ${fpsDisplay}`;
-                }
+                    const statusText = document.getElementById("camHudStatus");
+                    if (statusText) {
+                        statusText.innerHTML = `SYS.TRACKING: ACTIVE (WEBCAM)<br>MODEL: ${modelDisplay}`;
+                    }
+                    
+                    const fpsText = document.getElementById("camHudFps");
+                    if (fpsText) {
+                        fpsText.innerText = `FPS: ${fpsDisplay}`;
+                    }
 
-                // Start frame capture & detection loop
-                startWebcamAnalysisLoop();
-            })
-            .catch(err => {
-                console.warn("Webcam access denied/failed, falling back to simulated feed:", err);
-                fallbackToSimulationFeed();
-            });
+                    // Start frame capture & detection loop
+                    startWebcamAnalysisLoop();
+                })
+                .catch(err => {
+                    console.warn("Webcam access denied/failed, falling back to simulated feed:", err);
+                    fallbackToSimulationFeed();
+                });
+        } else {
+            console.warn("Webcam media API not supported or blocked in insecure context. Falling back to simulated feed.");
+            fallbackToSimulationFeed();
+        }
 
         // Poll alerts in background to fetch database alarm alerts fired by streams
         if (activeAlertPolling) clearInterval(activeAlertPolling);
