@@ -57,20 +57,11 @@ def analyze_image(img, model_name="yolov8n", conf_threshold=0.1, filename=None, 
     names = results[0].names
     boxes = results[0].boxes
     
-    # Restrict raw YOLO detections to humans and standard animal classes to avoid
-    # mapping inanimate objects (like chairs, cups, cellphones) into the ecological portal.
-    ALLOWED_CLASSES = {
-        'person', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'
-    }
-    
     detections = []
     if boxes is not None:
         for box in boxes:
             cls_id = int(box.cls[0].item())
             label = names[cls_id]
-            
-            if label not in ALLOWED_CLASSES:
-                continue
                 
             conf = float(box.conf[0].item())
             
