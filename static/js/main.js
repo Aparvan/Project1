@@ -1291,8 +1291,12 @@ function setCamViewMode(mode) {
             }
         });
 
-        // Also start the grid webcam auto-scan for wow-factor
-        toggleGridWebcam(true);
+        // Also start the grid webcam auto-scan with 300ms delay to allow hardware release
+        setTimeout(() => {
+            if (currentViewMode === "grid") {
+                toggleGridWebcam(true);
+            }
+        }, 300);
     } else {
         if (btnSingle) btnSingle.classList.add("active-cam");
         if (btnGrid) btnGrid.classList.remove("active-cam");

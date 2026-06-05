@@ -46,7 +46,8 @@ CAMERA_COORDINATES = {
     "Cam-05": {"name": "Amazon Flooded Canopy (Cam-05)", "lat": -3.4653, "lng": -62.2159},
     "Cam-06": {"name": "Yellowstone Grizzly Trail (Cam-06)", "lat": 44.4280, "lng": -110.5885},
     "Cam-07": {"name": "Flinders Chase Reserve (Cam-07)", "lat": -35.7752, "lng": 137.2142},
-    "Cam-08": {"name": "Svalbard Glacial Station (Cam-08)", "lat": 78.2232, "lng": 15.6267}
+    "Cam-08": {"name": "Svalbard Glacial Station (Cam-08)", "lat": 78.2232, "lng": 15.6267},
+    "Operator": {"name": "Local Operator Console (Webcam)", "lat": 0.0, "lng": 0.0}
 }
 
 # Real-time direct MP4 urls for wildlife feeds
@@ -70,7 +71,8 @@ _live_camera_detections = {
     "Cam-05": [],
     "Cam-06": [],
     "Cam-07": [],
-    "Cam-08": []
+    "Cam-08": [],
+    "Operator": []
 }
 
 app = Flask(__name__)
