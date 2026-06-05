@@ -463,7 +463,28 @@ def get_animal_intelligence(label):
     If not found, dynamically synthesizes a realistic profile on-the-fly,
     enabling the system to support any animal species in the world.
     """
-    cleaned_label = str(label).strip().lower()
+    if not label:
+        cleaned_label = "unknown"
+    else:
+        cleaned_label = str(label).strip().lower()
+        
+    if not cleaned_label or cleaned_label in ["none", "unknown", "null", "none", ""]:
+        return {
+            "scientific_name": "Incertae sedis",
+            "category": "Unidentified Target",
+            "danger_level": "Low",
+            "conservation_status": "Data Deficient",
+            "lifespan": "Unknown",
+            "habitat": "Sanctuary Perimeter",
+            "diet": "Unknown",
+            "regions": "Localized sensor grids",
+            "behaviors": "Vigilance, stealth, movement tracking.",
+            "description": "An unidentified specimen has crossed the camera sector sensor lines. The platform is running deep-learning classifiers to isolate target coordinates.",
+            "safety_recommendations": "Keep distance. Do not provoke or approach unidentified wild specimens.",
+            "sound": "Unknown vocalization",
+            "breed_details": "Unknown subspecies."
+        }
+        
     if cleaned_label in ANIMAL_INTELLIGENCE:
         return ANIMAL_INTELLIGENCE[cleaned_label]
         

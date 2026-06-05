@@ -980,7 +980,7 @@ function toggleWebcam(active) {
         if (radarSweep) radarSweep.style.display = "block";
 
         // Always initiate browser-side real-time webcam access for whatever camera is selected
-        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+        navigator.mediaDevices.getUserMedia({ video: true })
             .then(mediaStream => {
                 localWebcamStream = mediaStream;
                 if (browserWebcam) {

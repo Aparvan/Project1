@@ -24,8 +24,6 @@ def analyze_image(img, model_name="yolov8n", conf_threshold=0.1, filename=None, 
     Performs object detection on a PIL Image or OpenCV frame.
     Supports smart semantic filename overrides to detect advanced wildlife classes.
     """
-    model = get_model(model_name)
-    
     # Extract resolution dimensions
     if hasattr(img, 'width'):
         width, height = img.width, img.height
@@ -33,6 +31,23 @@ def analyze_image(img, model_name="yolov8n", conf_threshold=0.1, filename=None, 
         # numpy array from OpenCV
         height, width = img.shape[:2]
         
+    # If a manual species override is provided, completely dominant the detection frame
+    # for 100% accurate operator simulation without background model noise or overlapping boxes.
+    if species_override and isinstance(species_override, str):
+        override_val = species_override.lower().strip()
+        if override_val:
+            return {
+                "inference_time_ms": 15.0,
+                "detections": [{
+                    "label": override_val,
+                    "confidence": 0.95,
+                    "box": [0.15, 0.15, 0.85, 0.85]
+                }],
+                "width": width,
+                "height": height
+            }
+
+    model = get_model(model_name)
     start_time = time.time()
     results = model(img, conf=conf_threshold, verbose=False)
     end_time = time.time()
@@ -42,11 +57,21 @@ def analyze_image(img, model_name="yolov8n", conf_threshold=0.1, filename=None, 
     names = results[0].names
     boxes = results[0].boxes
     
+    # Restrict raw YOLO detections to humans and standard animal classes to avoid
+    # mapping inanimate objects (like chairs, cups, cellphones) into the ecological portal.
+    ALLOWED_CLASSES = {
+        'person', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'
+    }
+    
     detections = []
     if boxes is not None:
         for box in boxes:
             cls_id = int(box.cls[0].item())
             label = names[cls_id]
+            
+            if label not in ALLOWED_CLASSES:
+                continue
+                
             conf = float(box.conf[0].item())
             
             # Box coordinates in xyxy format
