@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  animal-detection-compare:
+    build: .
+    container_name: animal_detection_compare_container
+    ports:
+      - "5000:5000"
+    volumes:
+      - uploads_volume:/app/static/uploads
+      - db_volume:/app/instance
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=production-key-92837109283
+    restart: unless-stopped
+
+volumes:
+  uploads_volume:
+  db_volume:

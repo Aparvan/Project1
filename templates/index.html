@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Smart Wildlife Monitoring Platform</title>
+    <!-- Google Fonts & Material Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <!-- Alarm Proximity Warning Overlay -->
+    <div id="alarmOverlay" class="alarm-overlay">
+        <div class="alarm-box">
+            <span class="material-icons-outlined alarm-icon">report_problem</span>
+            <div class="alarm-text-title">PROXIMITY HAZARD ALERT</div>
+            <div id="alarmMessage" class="alarm-text-detail">A predatory animal has crossed the perimeter tripwires.</div>
+            <div class="alarm-instructions">
+                <strong>Ranger Protocol:</strong> Stand ground, load bear spray, alert dispatch grid immediately.
+            </div>
+            <button class="btn-danger glow-danger" onclick="dismissAlarm()" style="width: 100%; padding: 1rem; font-size: 1.1rem;">Acknowledge Threat / Mute</button>
+        </div>
+    </div>
+
+    <!-- Admin Authentication Modal Overlay -->
+    <div id="loginModal" class="login-modal-overlay">
+        <div class="login-box card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                <h3 class="hud-mono" style="color:var(--accent-cyan);">SECURITY NODE ACCESS</h3>
+                <span class="material-icons-outlined close-btn" onclick="toggleLoginModal(false)">close</span>
+            </div>
+            <div id="loginError" style="color:var(--accent-danger); font-size:0.85rem; margin-bottom:1rem; display:none;"></div>
+            
+            <label for="usernameInput" class="hud-label">Operator Username:</label>
+            <input type="text" id="usernameInput" class="hud-input" placeholder="e.g. ranger, admin">
+            
+            <label for="passwordInput" class="hud-label">Operator Code/Pass:</label>
+            <input type="password" id="passwordInput" class="hud-input" placeholder="••••••••">
+            
+            <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+                <button class="btn-primary" style="flex-grow:1;" onclick="submitLogin()">Authorize</button>
+                <button class="btn-action" onclick="toggleLoginModal(false)">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP WRAPPER -->
+    <div class="app-container">
+        
+        <!-- SIDEBAR NAVIGATION -->
+        <aside class="sidebar">
+            <div>
+                <div class="logo-section">
+                    <div class="logo-icon">AI</div>
+                    <div class="logo-text">AI Smart Wildlife Monitoring</div>
+                </div>
+                
+                <div class="hud-section-label">SYSTEM CONSOLE</div>
+                <nav>
+                    <ul class="nav-links">
+                        <li class="nav-item active" data-tab="dashboard">
+                            <button><span class="material-icons-outlined">dashboard</span>Operational Overview</button>
+                        </li>
+                        <li class="nav-item" data-tab="map-tracking">
+                            <button><span class="material-icons-outlined">map</span>Sanctuary Map</button>
+                        </li>
+                        <li class="nav-item" data-tab="camera">
+                            <button><span class="material-icons-outlined">videocam</span>Proximity Cams</button>
+                        </li>
+                        <li class="nav-item" data-tab="detection">
+                            <button><span class="material-icons-outlined">photo_camera</span>Sighting Analyzer</button>
+                        </li>
+                        <li class="nav-item" data-tab="history">
+                            <button><span class="material-icons-outlined">history</span>Telemetry Database</button>
+                        </li>
+                        <li class="nav-item" data-tab="comparison">
+                            <button><span class="material-icons-outlined">bar_chart</span>SOTA Benchmarks</button>
+                        </li>
+                        <li class="nav-item" data-tab="training">
+                            <button><span class="material-icons-outlined">model_training</span>Edge training Suite</button>
+                        </li>
+                        <li class="nav-item" data-tab="animal-info">
+                            <button><span class="material-icons-outlined">menu_book</span>Sanctuary Encyclopedia</button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <span class="status-dot"></span>
+                    <span id="systemStatusText" class="hud-mono">YOLOv8 PIPELINE ONLINE</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="main-content">
+            
+            <!-- TOP HUD HEADER BAR -->
+            <header class="top-hud-bar">
+                <div class="hud-title-section">
+                    <div class="hud-breadcrumb">AI SMART WILDLIFE MONITORING PLATFORM // SURVEILLANCE // CORE</div>
+                    <h2 class="hud-page-title" id="pageTitleText">OPERATIONAL OVERVIEW</h2>
+                </div>
+                <div class="hud-auth-panel">
+                    <div class="operator-badge">
+                        <span class="material-icons-outlined">badge</span>
+                        <div style="text-align: left;">
+                            <div class="operator-role" id="opRoleText">GUEST OPERATOR</div>
+                            <div class="operator-name" id="opNameText">Click Lock to Login</div>
+                        </div>
+                    </div>
+                    <button class="btn-hud-lock" id="btnAuthToggle" onclick="handleAuthToggle()">
+                        <span class="material-icons-outlined" id="lockIcon">lock_open</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- TAB 1: OPERATIONAL OVERVIEW -->
+            <section id="dashboard" class="page-section active">
+                <div class="stats-grid">
+                    <div class="card stat-card stat-accent-cyan">
+                        <div class="stat-header">Total Sightings <span class="material-icons-outlined">visibility</span></div>
+                        <div id="statTotalSessions" class="stat-value">0</div>
+                        <div class="stat-trend hud-mono">Persistent Tracking Active</div>
+                    </div>
+                    <div class="card stat-card stat-accent-purple">
+                        <div class="stat-header">Objects Logged <span class="material-icons-outlined">list_alt</span></div>
+                        <div id="statTotalObjects" class="stat-value">0</div>
+                        <div class="stat-trend hud-mono">COCO Class Mapping</div>
+                    </div>
+                    <div class="card stat-card stat-accent-warning">
+                        <div class="stat-header">Mean Confidence <span class="material-icons-outlined">bolt</span></div>
+                        <div id="statAvgConf" class="stat-value">0.0%</div>
+                        <div class="stat-trend hud-mono">Detection Threshold: 25%</div>
+                    </div>
+                    <div class="card stat-card stat-accent-success">
+                        <div class="stat-header">Inference Speed <span class="material-icons-outlined">speed</span></div>
+                        <div id="statAvgLatency" class="stat-value">0 ms</div>
+                        <div class="stat-trend hud-mono">YOLOv8 Edge Hardware</div>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div style="display:flex; flex-direction:column; gap:1.5rem;">
+                        <!-- Forecast Panel -->
+                        <div class="card threat-prediction-card">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
+                                <h3 class="hud-mono" style="color:var(--accent-purple); display:flex; align-items:center; gap:0.5rem;">
+                                    <span class="material-icons-outlined">insights</span> Predictive Threat Forecast
+                                </h3>
+                                <span class="badge-status danger glow-danger" id="threatStatusBadge">LOW RISK</span>
+                            </div>
+                            <div class="threat-prediction-body">
+                                <div class="threat-meter-container">
+                                    <div class="threat-meter-fill" id="threatMeterFill" style="width: 15%;"></div>
+                                    <div class="threat-meter-label hud-mono" id="threatMeterLabel">15.0% Predator Index</div>
+                                </div>
+                                <div class="threat-forecasts-list" id="forecastsList">
+                                    <!-- Populated dynamically -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Graph Card -->
+                        <div class="card">
+                            <h3 class="card-title hud-mono" style="margin-bottom:1rem;">Species Sighting Frequency</h3>
+                            <div style="height: 220px; display: flex; align-items: center; justify-content: center;">
+                                <canvas id="frequencyChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; flex-direction:column; gap:1.5rem;">
+                        <!-- Report Download -->
+                        <div class="card cyber-report-card">
+                            <h3 class="hud-mono" style="color:var(--accent-cyan); margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">
+                                <span class="material-icons-outlined">description</span> Cyber Report Dispatch
+                            </h3>
+                            <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1.25rem; line-height:1.4;">
+                                Compile database telemetry logs, model benchmarks, and danger alerts into an official PDF record.
+                            </p>
+                            <button class="btn-primary glow-cyan" style="width:100%;" onclick="generatePDFReport()">
+                                <span class="material-icons-outlined" style="font-size:1.1rem; vertical-align:middle; margin-right:0.5rem;">download</span> Export Ecological Report (PDF)
+                            </button>
+                        </div>
+
+                        <!-- Alerts Panel -->
+                        <div class="card danger-alerts-panel" style="flex-grow:1;">
+                            <h3 class="hud-mono" style="color:var(--accent-danger); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
+                                <span class="material-icons-outlined">notifications_active</span> Live Perimeter Alerts
+                            </h3>
+                            <div id="dangerAlertsList" style="display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; max-height: 280px;">
+                                <div style="color: var(--text-muted); font-size: 0.9rem; text-align: center; padding: 2rem;">Grid monitoring online. No alerts.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: SANCTUARY INTERACTIVE MAP -->
+            <section id="map-tracking" class="page-section">
+                <div class="map-layout">
+                    <div class="card map-container-wrapper">
+                        <div id="leafletMap" style="height:500px; width:100%; border-radius:8px; border:1px solid var(--border-glass);"></div>
+                    </div>
+                    <div class="card map-sidebar">
+                        <h3 class="hud-mono" style="color:var(--accent-cyan); margin-bottom:1rem;">Active Camera Nodes</h3>
+                        <div class="camera-nodes-list" id="mapCamList">
+                            <!-- Populated dynamically from CAMERA_COORDINATES -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: PROXIMITY CAMS (WITH AUTO-SCANNING HUD) -->
+            <section id="camera" class="page-section">
+                <div class="multi-cam-container">
+                    <div class="card camera-feed-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                            <h3 class="hud-mono" id="activeFeedTitle" style="color:var(--accent-cyan);">WATERING HOLE FEED // CAM-01</h3>
+                            <div class="feed-badge hud-mono"><span class="pulse-icon red"></span> LIVE FEED</div>
+                        </div>
+                        <div class="camera-feed-box" style="position:relative;">
+                            <img id="cameraStream" class="camera-feed-img" src="" alt="Live Feed Grid">
+                            
+                            <!-- Local Browser Webcam Video and Drawing overlays -->
+                            <video id="browserWebcam" autoplay playsinline style="display:none; width: 100%; height: 100%; object-fit: cover;"></video>
+                            <canvas id="browserCanvas" style="display:none;"></canvas>
+                            <svg id="browserSvgOverlay" class="svg-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" style="display:none; z-index: 2; position: absolute; top:0; left:0; width:100%; height:100%;"></svg>
+                            
+                            <!-- Radar sweep animation overlay -->
+                            <div id="radarSweep" class="radar-sweep" style="display:none; z-index: 3;"></div>
+                            
+                            <!-- Floating interactive bounding box tooltip -->
+                            <div id="webcamTooltip" class="webcam-tooltip" style="display:none; z-index: 10; position:absolute; pointer-events:none;"></div>
+                            
+                            <!-- Synthetic Camera Info Overlay -->
+                            <div class="cam-hud-overlay" style="z-index: 4;">
+                                <div class="hud-top-left hud-mono" id="camHudStatus">SYS.TRACKING: ACTIVE<br>MODEL: YOLOv8-NANO</div>
+                                <div class="hud-top-right hud-mono" id="camHudTime">TIME: --:--:--</div>
+                                <div class="hud-bottom-left hud-mono" id="camHudGps">GPS: -1.2921, 34.8219</div>
+                                <div class="hud-bottom-right hud-mono" id="camHudFps">FPS: 25.0</div>
+                            </div>
+                        </div>
+
+                        <!-- Active Target Profile display -->
+                        <div class="card" id="camIntelPanel" style="display:none; margin-top:1.5rem; border-color:var(--accent-purple); padding:1.25rem; background:hsla(270, 85%, 65%, 0.03);">
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-glass); padding-bottom:0.5rem; margin-bottom:0.75rem;">
+                                <h4 class="hud-mono" style="color:var(--accent-purple); font-size:0.85rem; margin:0; display:flex; align-items:center; gap:0.3rem;">
+                                    <span class="material-icons-outlined" style="font-size:1.1rem;">badge</span> ACTIVE TARGET PROFILE
+                                </h4>
+                                <span class="badge-status info" id="camIntelDanger" style="font-size:0.65rem; padding:0.15rem 0.4rem;">DANGER: NONE</span>
+                            </div>
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem; font-size:0.85rem; line-height:1.4;">
+                                <div><strong>Species:</strong> <span id="camIntelName" style="text-transform:capitalize; color:var(--text-primary); font-weight:700;">N/A</span></div>
+                                <div><strong>Scientific Name:</strong> <em id="camIntelScientific" style="color:var(--accent-cyan);">N/A</em></div>
+                                <div><strong>Category:</strong> <span id="camIntelCategory">N/A</span></div>
+                                <div><strong>Endangered Status:</strong> <span id="camIntelConservation">N/A</span></div>
+                                <div><strong>Habitats:</strong> <span id="camIntelHabitat">N/A</span></div>
+                                <div><strong>Diet:</strong> <span id="camIntelDiet">N/A</span></div>
+                                <div><strong>Individual ID:</strong> <span id="camIntelId" style="color:var(--accent-cyan);">N/A</span></div>
+                                <div><strong>Individual Health:</strong> <span id="camIntelHealth" style="color:var(--accent-success);">N/A</span></div>
+                            </div>
+                            <div style="margin-top:0.75rem; padding:0.6rem; background:rgba(0,0,0,0.25); border-radius:4px; border-left:3px solid var(--accent-cyan); font-size:0.8rem; line-height:1.45;">
+                                <strong>Eco-Profile:</strong> <span id="camIntelDescription" style="color:var(--text-secondary);">N/A</span>
+                            </div>
+                            <div style="margin-top:0.5rem; padding:0.6rem; background:rgba(0,0,0,0.25); border-radius:4px; border-left:3px solid var(--accent-danger); font-size:0.8rem; line-height:1.45;">
+                                <strong>Safety Protocol:</strong> <span id="camIntelSafety" style="color:var(--text-secondary);">N/A</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card cam-controls-sidebar" style="display:flex; flex-direction:column; gap:1rem;">
+                        <div>
+                            <h3 class="hud-mono" style="margin-bottom:0.75rem;">Feed Switchboard</h3>
+                            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:1rem;" id="switchboardList">
+                                <!-- Populated dynamically from CAMERA_COORDINATES -->
+                            </div>
+
+                            <!-- Proximity Scanning Parameters -->
+                            <div style="margin-bottom:1rem; padding:0.75rem; background:hsla(220, 20%, 15%, 0.4); border:1px solid var(--border-glass); border-radius:6px; display:flex; flex-direction:column; gap:0.75rem;">
+                                <div style="display:flex; align-items:center;">
+                                    <label for="webcamLogToggle" class="hud-mono" style="font-size:0.75rem; color:var(--text-secondary); cursor:pointer; display:flex; align-items:center; gap:0.4rem; margin:0;">
+                                        <input type="checkbox" id="webcamLogToggle" style="accent-color:var(--accent-cyan); cursor:pointer;"> Log Webcam Detections
+                                    </label>
+                                </div>
+                                <div>
+                                    <label for="webcamModelSelect" class="hud-label" style="margin-top:0; margin-bottom:0.35rem;">Detection Weights Scale:</label>
+                                    <select id="webcamModelSelect" class="hud-input" style="background:var(--bg-glass); color:var(--text-primary); margin:0; padding:0.4rem 0.6rem; font-size:0.8rem;">
+                                        <option value="yolov8n">YOLOv8 Nano (Fastest)</option>
+                                        <option value="yolov8s">YOLOv8 Small (Balanced)</option>
+                                        <option value="yolov8m">YOLOv8 Medium (Accurate)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="webcamSpeciesOverride" class="hud-label" style="margin-top:0; margin-bottom:0.35rem;">Webcam Species Override:</label>
+                                    <input type="text" id="webcamSpeciesOverride" class="hud-input" style="background:var(--bg-glass); color:var(--text-primary); margin:0; padding:0.4rem 0.6rem; font-size:0.8rem;" placeholder="e.g. human, bear, sloth (optional)">
+                                </div>
+                            </div>
+                            
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button id="btnStartCamera" class="btn-primary" style="flex-grow:1; font-size:0.85rem; padding:0.6rem;" onclick="toggleWebcam(true)">Initiate Proximity Scanning</button>
+                                <button id="btnStopCamera" class="btn-danger" style="display: none; flex-grow:1; font-size:0.85rem; padding:0.6rem;" onclick="toggleWebcam(false)">Disconnect System</button>
+                            </div>
+                        </div>
+
+                        <!-- Universal Telemetry Sighting Injector -->
+                        <div class="card" style="border-color: var(--accent-purple); padding: 1rem;">
+                            <h4 class="hud-mono" style="color: var(--accent-purple); font-size: 0.8rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.35rem; margin-top:0;">
+                                <span class="material-icons-outlined">science</span> universal telemetry injector
+                            </h4>
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                <input type="text" id="simSpeciesInput" class="hud-input" style="font-size: 0.8rem; padding: 0.55rem; margin: 0; background:hsla(220, 20%, 10%, 0.8);" placeholder="Species e.g. koala, python..." onkeypress="handleSimKeyPress(event)">
+                                <button class="btn-primary" style="font-size: 0.8rem; padding: 0.55rem; background: var(--accent-purple); border-color: var(--accent-purple); box-shadow: var(--glow-purple);" onclick="injectLiveSighting()">
+                                    Inject Simulated Species
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Live Telemetry Intelligence Auto-Scanner Overlay -->
+                        <div class="card live-scanner-card" style="border-color: var(--accent-cyan); display: none; padding: 1rem; flex-grow: 1; overflow-y: auto;" id="liveScannerPanel">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; border-bottom: 1px solid var(--border-glass); padding-bottom:0.4rem;">
+                                <h4 class="hud-mono" style="color:var(--accent-cyan); font-size:0.8rem; display:flex; align-items:center; gap:0.3rem; margin:0;">
+                                    <span class="material-icons-outlined" style="animation: spin 3s infinite linear; font-size:1rem;">filter_tilt_shift</span> AUTO-SCAN ACTIVE
+                                </h4>
+                                <span class="badge-status info" style="font-size:0.6rem; padding:0.1rem 0.3rem;" id="liveScanIndicator">SCANNING...</span>
+                            </div>
+                            <div id="liveScanBody" style="font-size:0.85rem;">
+                                <div style="color:var(--text-muted); text-align:center; padding:1.5rem 0;">Webcam feed inactive or awaiting telemetry logs.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: SIGHTING ANALYZER (FILE UPLOADER & SVG OVERLAYS) -->
+            <section id="detection" class="page-section">
+                <div class="detection-container">
+                    <div>
+                        <div class="card">
+                            <div id="uploadZone" class="upload-zone">
+                                <span class="material-icons-outlined upload-icon">cloud_upload</span>
+                                <h3 class="upload-text hud-mono">DISPATCH MEDIA FILES FOR LOCAL DEEP LEARNING</h3>
+                                <p class="upload-hint">Supports PNG, JPG, MP4, AVI up to 32MB (Tip: Rename file to target species name or use the config override panel)</p>
+                                <input type="file" id="fileInput" class="hidden-input" accept="image/*,video/*">
+                            </div>
+                            
+                            <div id="visualizerContainer" style="display: none; margin-top: 1rem;">
+                                <div class="visualizer-wrapper">
+                                    <img id="displayImage" class="visualizer-image" src="" alt="Detections display">
+                                    <video id="displayVideo" class="visualizer-image" style="display: none;" controls autoplay loop muted></video>
+                                    <svg id="svgOverlay" class="svg-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="detections-sidebar">
+                        <div class="card">
+                            <h3 class="hud-mono" style="margin-bottom: 1rem;">SURVEILLANCE CONFIG</h3>
+                            
+                            <label for="cameraUploadSelect" class="hud-label">Sighting Cam Sector:</label>
+                            <select id="cameraUploadSelect" class="hud-input" style="background:var(--bg-glass); color:var(--text-primary);">
+                                <option value="Cam-01">Watering Hole (Cam-01)</option>
+                                <option value="Cam-02">North Ranger Station (Cam-02)</option>
+                                <option value="Cam-03">Deep Forest Canopy (Cam-03)</option>
+                            </select>
+
+                            <label for="modelSelect" class="hud-label">CNN Weights Scale:</label>
+                            <select id="modelSelect" class="hud-input" style="background:var(--bg-glass); color:var(--text-primary);">
+                                <option value="yolov8n">YOLOv8 Nano (Fastest)</option>
+                                <option value="yolov8s">YOLOv8 Small (Balanced)</option>
+                                <option value="yolov8m">YOLOv8 Medium (Accurate)</option>
+                            </select>
+
+                            <label for="speciesOverrideInput" class="hud-label">Species Override / Manual Guide:</label>
+                            <input type="text" id="speciesOverrideInput" class="hud-input" style="background:var(--bg-glass); color:var(--text-primary); margin-bottom:0.75rem;" placeholder="e.g. koala, sloth, python (optional)">
+                            
+                            <div class="slider-container">
+                                <div class="slider-header hud-mono">
+                                    <span>Confidence Cutoff:</span>
+                                    <span id="sliderValue">25%</span>
+                                </div>
+                                <input type="range" id="confSlider" class="styled-slider" min="10" max="95" value="25">
+                            </div>
+                        </div>
+                        
+                        <div class="card" style="flex-grow: 1; display:flex; flex-direction:column;">
+                            <h3 class="hud-mono" style="margin-bottom: 1rem;">SIGHTED OBJECTS</h3>
+                            <div id="detectionList" class="detection-list" style="flex-grow:1; overflow-y:auto;">
+                                <div style="color:var(--text-muted); font-size:0.9rem; text-align:center; padding:2rem;">Queue media for analysis.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Animal Intelligence Dynamic Display Overlay Panel -->
+                <div class="card" id="intelPanel" style="display:none; margin-top:1.5rem; border-color:var(--accent-purple); animation:fadeIn 0.3s forwards;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; border-bottom:1px solid var(--border-glass); padding-bottom:0.75rem;">
+                        <div>
+                            <span class="hud-mono" style="font-size:0.8rem; color:var(--accent-purple);">SIGHTED SPECIES INTELLIGENCE CARD</span>
+                            <h2 class="hud-page-title" id="intelAnimalName" style="margin:0; text-transform:uppercase;">BEAR</h2>
+                        </div>
+                        <span class="badge-status info" id="intelDangerLevel">DANGER LEVEL: HIGH</span>
+                    </div>
+
+                    <div class="intel-grid">
+                        <div class="intel-col">
+                            <div class="intel-item"><strong>Scientific Name:</strong> <span id="intelScientificName">Ursidae</span></div>
+                            <div class="intel-item"><strong>Species Category:</strong> <span id="intelCategory">Mammal</span></div>
+                            <div class="intel-item"><strong>Conservation Status:</strong> <span id="intelConservation">Vulnerable</span></div>
+                            <div class="intel-item"><strong>Average Lifespan:</strong> <span id="intelLifespan">25 years</span></div>
+                            <div class="intel-item"><strong>Individual Estimated Age:</strong> <span id="intelEstimatedAge" style="color:var(--accent-cyan);">Adult</span></div>
+                            <div class="intel-item"><strong>Individual Health Index:</strong> <span id="intelHealthStatus" style="color:var(--accent-success);">Healthy / Active</span></div>
+                        </div>
+                        <div class="intel-col">
+                            <div class="intel-item"><strong>Geographic Regions:</strong> <span id="intelRegions">North America, Europe</span></div>
+                            <div class="intel-item"><strong>Primary Habitats:</strong> <span id="intelHabitats">Forests, alpine zones</span></div>
+                            <div class="intel-item"><strong>Food Habits:</strong> <span id="intelDiet">Omnivore (berries, fish)</span></div>
+                            <div class="intel-item"><strong>Telemetry Heading:</strong> <span id="intelHeading" style="color:var(--accent-cyan);">Moving East</span></div>
+                            <div class="intel-item"><strong>Breed Species Details:</strong> <span id="intelBreedDetails">Grizzly, Polar Bear, Brown Bear</span></div>
+                            <div class="intel-item"><strong>Natural Vocalization:</strong> <span id="intelSound">Growl, Roar, Huff</span></div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:1.5rem; display:grid; grid-template-columns: 2fr 1fr; gap:1.5rem;">
+                        <div style="background:hsla(220, 20%, 15%, 0.4); padding:1rem; border-radius:6px; border-left:3px solid var(--accent-cyan);">
+                            <h4 class="hud-mono" style="margin-bottom:0.5rem; color:var(--text-primary);">AI Ecological Profile</h4>
+                            <p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;" id="intelDescription">Small details</p>
+                        </div>
+                        <div style="background:hsla(0, 85%, 50%, 0.05); padding:1rem; border-radius:6px; border-left:3px solid var(--accent-danger);">
+                            <h4 class="hud-mono" style="margin-bottom:0.5rem; color:var(--accent-danger);">Safety Recommendations</h4>
+                            <p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;" id="intelSafety">Close sectors</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: TELEMETRY DATA RECORDS -->
+            <section id="history" class="page-section">
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                        <h3 class="hud-mono" style="color:var(--accent-cyan);">PERSISTENT SQLITE DATABASE ENTRIES</h3>
+                        <div style="font-size:0.8rem; color:var(--text-muted);" id="dbRoleRestrictionInfo">*Ranger authorization required to erase logs</div>
+                    </div>
+                    <div class="history-table-container">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>File Name</th>
+                                    <th>Model Scale</th>
+                                    <th>Cam Sector</th>
+                                    <th>Inference Latency</th>
+                                    <th>Detections Summary</th>
+                                    <th>Surveillance Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr>
+                                    <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">Parsing SQLite databases...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 6: MODEL BENCHMARK SYSTEM -->
+            <section id="comparison" class="page-section">
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <h3 class="hud-mono" style="color:var(--accent-cyan);">Interactive Deep Learning Benchmark Scale</h3>
+                        <button id="btnBenchmark" class="btn-primary" onclick="triggerBenchmark()">Execute SOTA Test Bench</button>
+                    </div>
+                    
+                    <div id="benchmarkLoading" style="display:none; text-align:center; padding: 2rem; color:var(--accent-cyan);">
+                        <div class="hud-mono" style="margin-bottom:1rem; animation: pulse 1s infinite alternate;">COMPILING NETWORKS FOR COMPARISON...</div>
+                    </div>
+                    
+                    <div id="benchmarkCharts" class="dashboard-grid" style="margin-top: 1.5rem; transition: var(--transition-smooth);">
+                        <div style="height: 250px;">
+                            <canvas id="benchmarkLatencyChart"></canvas>
+                        </div>
+                        <div style="height: 250px;">
+                            <canvas id="benchmarkConfidenceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="hud-mono" style="margin-bottom: 1rem; color: var(--accent-purple);">SOTA Comparative Analysis Specifications</h3>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.5;">
+                        Comparison of YOLOv8 anchor-free architecture against older anchor-based and two-stage SOTA pipelines.
+                    </p>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                        <div style="height: 240px;">
+                            <canvas id="researchAccuracyChart"></canvas>
+                        </div>
+                        <div style="height: 240px;">
+                            <canvas id="researchFPSChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="history-table-container" style="margin-bottom: 2rem;">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Model Name</th>
+                                    <th>Accuracy (mAP)</th>
+                                    <th>Inference Speed (FPS)</th>
+                                    <th>Standard Latency</th>
+                                    <th>Memory Footprint</th>
+                                    <th>Key Architectural Advantage / Drawback</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="font-weight: 700; color: var(--accent-cyan);">YOLOv8 (SOTA)</td>
+                                    <td><strong>53.9%</strong></td>
+                                    <td><strong>80+ FPS</strong></td>
+                                    <td><strong>12 ms</strong></td>
+                                    <td><strong>~115 MB</strong></td>
+                                    <td>Anchor-free detection grid, highly optimized tensor kernels.</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight: 600; color: var(--text-primary);">YOLOv5</td>
+                                    <td>48.2%</td>
+                                    <td>70 FPS</td>
+                                    <td>14 ms</td>
+                                    <td>~180 MB</td>
+                                    <td>Very mature PyTorch exporters / Struggles on small overlapping flocks.</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight: 600; color: var(--text-primary);">SSD (Single Shot)</td>
+                                    <td>34.3%</td>
+                                    <td>45 FPS</td>
+                                    <td>22 ms</td>
+                                    <td>~250 MB</td>
+                                    <td>Lightweight on edge CPUs / Substantially low localization scores on distant wildlife.</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight: 600; color: var(--text-primary);">Faster R-CNN</td>
+                                    <td>46.0%</td>
+                                    <td>12 FPS</td>
+                                    <td>80 ms</td>
+                                    <td>~1250 MB</td>
+                                    <td>High two-stage localization resolution / Too slow for real-time cameras.</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight: 600; color: var(--text-primary);">EfficientDet</td>
+                                    <td>43.1%</td>
+                                    <td>32 FPS</td>
+                                    <td>31 ms</td>
+                                    <td>~310 MB</td>
+                                    <td>High parameter efficiency with BiFPN layers / Poor latency on standard CPU edges.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="background: hsla(220, 20%, 15%, 0.4); border-left: 4px solid var(--accent-cyan); padding: 1.25rem; border-radius: 4px; line-height: 1.6;">
+                        <h4 class="hud-mono" style="margin-bottom: 0.5rem; color: var(--text-primary);">Why YOLOv8 Outperforms Other Architectures in Wildlife Monitoring:</h4>
+                        <ul style="list-style-position: inside; color: var(--text-secondary); font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                            <li><strong>Anchor-Free Head:</strong> Directly predicts the box centers, avoiding manual anchor box tuning which fails for varying animal shapes.</li>
+                            <li><strong>Spatial Attention Models:</strong> Leverages C2f modules to preserve detailed textural details (furs, markings) at higher framerates.</li>
+                            <li><strong>Optimized Edge Footprint:</strong> Runs sub-20ms inferences even on lightweight CPU units (Raspberry Pi/Nvidia Jetson).</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 7: EDGE TRAINING SIMULATOR HUB -->
+            <section id="training" class="page-section">
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div>
+                            <h3 class="hud-mono" style="color:var(--accent-purple);">Interactive Telemetry Training Pipe</h3>
+                            <p class="page-subtitle" style="margin-bottom:0; font-size:0.85rem;">Mocking custom weights adjustments (PyTorch YOLOv8 on Custom Sanctuary Dataset)</p>
+                        </div>
+                        <button id="btnStartTraining" class="btn-primary glow-cyan" onclick="startTrainingRun()">Initiate Pipe</button>
+                    </div>
+                    
+                    <div class="progress-bar-wrapper">
+                        <div id="trainingProgressBar" class="progress-bar-fill"></div>
+                    </div>
+                    
+                    <div class="training-layout">
+                        <div class="terminal-box" id="trainingTerminal">
+                            <div class="terminal-line hud-mono" style="color:var(--text-muted);">Pipeline ready. Click 'Initiate Pipe' to begin logs.</div>
+                        </div>
+                        
+                        <div style="display:flex; flex-direction:column; gap:1rem;">
+                            <div style="height: 180px;">
+                                <canvas id="lossChart"></canvas>
+                            </div>
+                            <div style="height: 180px;">
+                                <canvas id="mapChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 8: SPECIES ENCYCLOPEDIA -->
+            <section id="animal-info" class="page-section">
+                <div class="card" style="margin-bottom:1.5rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3 class="hud-mono" style="color:var(--accent-cyan);">Sanctuary Species Index</h3>
+                        <input type="text" id="encyclopediaSearch" class="hud-input" style="max-width:260px; margin:0;" placeholder="Search species..." oninput="filterEncyclopedia()">
+                    </div>
+                </div>
+                <div class="info-grid" id="encyclopediaGrid">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </section>
+            
+        </main>
+    </div>
+
+    <!-- FLOATING AI ASSISTANT CHATBOT DRAWER -->
+    <div class="chatbot-toggle" id="chatToggle" onclick="toggleChatPanel(true)">
+        <span class="material-icons-outlined">psychology</span>
+        <span class="chat-status-indicator"></span>
+    </div>
+
+    <div class="chatbot-drawer" id="chatDrawer">
+        <div class="chat-header">
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+                <span class="material-icons-outlined" style="color:var(--accent-purple); font-size: 1.6rem;">psychology</span>
+                <div>
+                    <div style="font-weight:700; font-size:0.95rem; font-family:var(--font-heading); color: var(--text-primary); letter-spacing: 0.5px;">CLAUDE ECOintelligence</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted); display:flex; align-items:center; gap:0.25rem;">
+                        <span class="node-pulse green" style="width:6px; height:6px; position:static; display:inline-block;"></span>
+                        Claude-v2.5 Engine &bull; Active
+                    </div>
+                </div>
+            </div>
+            <span class="material-icons-outlined close-chat" onclick="toggleChatPanel(false)">close</span>
+        </div>
+        
+        <!-- Suggested Action Pills -->
+        <div class="chat-suggested-pills">
+            <div class="chat-pill" onclick="quickQueryChat('Compare YOLOv8 Architecture')">🤖 Compare YOLOv8</div>
+            <div class="chat-pill" onclick="quickQueryChat('Predator Safety Protocols')">🛡️ Predator Safety</div>
+            <div class="chat-pill" onclick="quickQueryChat('Threat Level Analysis')">📈 Threat Analysis</div>
+            <div class="chat-pill" onclick="quickQueryChat('Synthesize Cheetah Dossier')">🐆 Synthesize Cheetah</div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg bot">
+                <h4>System Liaison Initialized</h4>
+                Hello. I am the Claude-powered <strong>EcoIntelligence Agent</strong>. I have full telemetry access to this sanctuary's optical sensor grid, species encyclopedia databases, and deep learning analytics.
+                
+                <div class="claude-callout alert-info">
+                    <strong>System capabilities:</strong>
+                    <ul>
+                        <li>Compare YOLOv8 against other model architectures.</li>
+                        <li>Synthesize biological profiles for any species in the world on-the-fly.</li>
+                        <li>Provide active threat evaluation and safety recommendations.</li>
+                    </ul>
+                </div>
+                What analytical query or species research can I assist you with today?
+            </div>
+        </div>
+        <div class="chat-input-area" style="position: relative; display: flex; gap: 0.5rem; align-items: center;">
+            <button id="btnVoiceInput" class="btn-action" style="padding: 0.4rem; display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 6px; flex-shrink: 0;" title="Voice Input (Speech to Text)" onclick="startVoiceRecognition()">
+                <span class="material-icons-outlined" style="margin: 0; font-size: 1.25rem;">mic</span>
+            </button>
+            <input type="text" id="chatInput" placeholder="Ask Claude about species, safety, models..." onkeypress="handleChatKey(event)">
+            <button class="btn-chat-send" style="flex-shrink: 0;" onclick="sendChatMessage()"><span class="material-icons-outlined">send</span></button>
+        </div>
+        <div style="padding: 0.4rem 1rem; background: hsla(220, 25%, 5%, 0.95); border-top: 1px solid var(--border-glass); display: flex; align-items: center; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted);">
+            <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; margin: 0; font-family: var(--font-mono); font-weight: 500;">
+                <input type="checkbox" id="chatSpeakToggle" style="accent-color: var(--accent-cyan); cursor: pointer;"> Vocalize Chat Responses
+            </label>
+            <span id="voiceStatus" style="font-family: var(--font-mono); color: var(--accent-cyan); display: none;">Listening...</span>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
