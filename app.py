@@ -112,6 +112,7 @@ def init_mock_users():
         if not admin:
             admin_user = User(
                 username="admin",
+                email="admin@reserve.org",
                 password_hash=generate_password_hash("adminpassword"),
                 role="Administrator"
             )
@@ -121,6 +122,7 @@ def init_mock_users():
         if not ranger:
             ranger_user = User(
                 username="ranger",
+                email="ranger@reserve.org",
                 password_hash=generate_password_hash("ranger123"),
                 role="Ranger"
             )
@@ -131,6 +133,15 @@ def init_mock_users():
         print(f"Error seeding users: {e}")
 
 with app.app_context():
+    try:
+        # Check if table columns match by executing a query on users
+        User.query.first()
+    except Exception:
+        print("Database schema mismatch or missing columns. Recreating tables...")
+        try:
+            db.drop_all()
+        except Exception:
+            pass
     db.create_all()
     init_mock_users()
     # Spawn background video downloader thread to ensure app boot stays sub-second
@@ -145,13 +156,14 @@ def is_video(filename):
 @app.route("/login", methods=["POST"])
 def auth_login():
     data = request.get_json() or {}
-    username = data.get("username", "").strip()
+    username_or_email = data.get("username", "").strip()
     password = data.get("password", "").strip()
     
-    if not username or not password:
+    if not username_or_email or not password:
         return jsonify({"error": "Missing login credentials"}), 400
         
-    user = User.query.filter_by(username=username).first()
+    # Query user by username or email
+    user = User.query.filter((User.username == username_or_email) | (User.email == username_or_email)).first()
     if user and check_password_hash(user.password_hash, password):
         session["user_id"] = user.id
         session["username"] = user.username
@@ -161,7 +173,50 @@ def auth_login():
             "username": user.username,
             "role": user.role
         })
-    return jsonify({"error": "Invalid username or password"}), 401
+    return jsonify({"error": "Invalid credentials"}), 401
+
+@app.route("/register", methods=["POST"])
+def auth_register():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "").strip()
+    role = data.get("role", "Guest").strip()
+    
+    if not username or not email or not password:
+        return jsonify({"error": "All fields are required"}), 400
+        
+    if "@" not in email or "." not in email:
+        return jsonify({"error": "Invalid email address format"}), 400
+        
+    # Check for existing accounts
+    existing_user = User.query.filter((User.username == username) | (User.email == email)).first()
+    if existing_user:
+        return jsonify({"error": "Username or Email already registered"}), 400
+        
+    try:
+        new_user = User(
+            username=username,
+            email=email,
+            password_hash=generate_password_hash(password),
+            role=role
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        
+        # Log in the user immediately
+        session["user_id"] = new_user.id
+        session["username"] = new_user.username
+        session["role"] = new_user.role
+        
+        return jsonify({
+            "success": True,
+            "username": new_user.username,
+            "role": new_user.role
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
 
 @app.route("/logout", methods=["POST"])
 def auth_logout():

@@ -265,6 +265,100 @@ function toggleLoginModal(show) {
     const modal = document.getElementById("loginModal");
     modal.style.display = show ? "flex" : "none";
     document.getElementById("loginError").style.display = "none";
+    if (show) {
+        // Reset all inputs
+        document.getElementById("usernameInput").value = "";
+        document.getElementById("passwordInput").value = "";
+        document.getElementById("regUsernameInput").value = "";
+        document.getElementById("regEmailInput").value = "";
+        document.getElementById("regPasswordInput").value = "";
+        document.getElementById("regRoleInput").value = "Guest";
+        switchAuthTab('login');
+    }
+}
+
+function switchAuthTab(tab) {
+    const btnLogin = document.getElementById("btnAuthTabLogin");
+    const btnRegister = document.getElementById("btnAuthTabRegister");
+    const panelLogin = document.getElementById("panelAuthLogin");
+    const panelRegister = document.getElementById("panelAuthRegister");
+    const title = document.getElementById("authModalTitle");
+    const errDiv = document.getElementById("loginError");
+
+    if (errDiv) errDiv.style.display = "none";
+
+    if (tab === "login") {
+        if (btnLogin) {
+            btnLogin.style.borderBottom = "2px solid var(--accent-cyan)";
+            btnLogin.style.color = "var(--accent-cyan)";
+        }
+        if (btnRegister) {
+            btnRegister.style.borderBottom = "2px solid transparent";
+            btnRegister.style.color = "var(--text-muted)";
+        }
+        if (panelLogin) panelLogin.style.display = "block";
+        if (panelRegister) panelRegister.style.display = "none";
+        if (title) title.innerText = "SECURITY NODE LOGIN";
+    } else {
+        if (btnLogin) {
+            btnLogin.style.borderBottom = "2px solid transparent";
+            btnLogin.style.color = "var(--text-muted)";
+        }
+        if (btnRegister) {
+            btnRegister.style.borderBottom = "2px solid var(--accent-cyan)";
+            btnRegister.style.color = "var(--accent-cyan)";
+        }
+        if (panelLogin) panelLogin.style.display = "none";
+        if (panelRegister) panelRegister.style.display = "block";
+        if (title) title.innerText = "REGISTER NEW OPERATOR NODE";
+    }
+}
+
+function submitRegister() {
+    const usernameVal = document.getElementById("regUsernameInput").value.trim();
+    const emailVal = document.getElementById("regEmailInput").value.trim();
+    const passwordVal = document.getElementById("regPasswordInput").value.trim();
+    const roleVal = document.getElementById("regRoleInput").value;
+    const errDiv = document.getElementById("loginError");
+
+    if (!usernameVal || !emailVal || !passwordVal) {
+        if (errDiv) {
+            errDiv.innerText = "All registration fields are required.";
+            errDiv.style.display = "block";
+        }
+        return;
+    }
+
+    fetch("/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            username: usernameVal,
+            email: emailVal,
+            password: passwordVal,
+            role: roleVal
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            if (errDiv) {
+                errDiv.innerText = data.error;
+                errDiv.style.display = "block";
+            }
+        } else {
+            toggleLoginModal(false);
+            checkUserStatus();
+            loadHistory(); // Refresh session layout features
+        }
+    })
+    .catch(err => {
+        console.error("Registration failed:", err);
+        if (errDiv) {
+            errDiv.innerText = "Registration connection failed.";
+            errDiv.style.display = "block";
+        }
+    });
 }
 
 function submitLogin() {

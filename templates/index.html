@@ -31,22 +31,57 @@
 
     <!-- Admin Authentication Modal Overlay -->
     <div id="loginModal" class="login-modal-overlay">
-        <div class="login-box card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-                <h3 class="hud-mono" style="color:var(--accent-cyan);">SECURITY NODE ACCESS</h3>
+        <div class="login-box card" style="max-width: 420px; width: 90%;">
+            <!-- Header -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
+                <h3 class="hud-mono" id="authModalTitle" style="color:var(--accent-cyan); font-size:1.1rem; letter-spacing:0.5px;">SECURITY NODE LOGIN</h3>
                 <span class="material-icons-outlined close-btn" onclick="toggleLoginModal(false)">close</span>
             </div>
-            <div id="loginError" style="color:var(--accent-danger); font-size:0.85rem; margin-bottom:1rem; display:none;"></div>
             
-            <label for="usernameInput" class="hud-label">Operator Username:</label>
-            <input type="text" id="usernameInput" class="hud-input" placeholder="e.g. ranger, admin">
+            <div id="loginError" style="color:var(--accent-danger); font-size:0.85rem; margin-bottom:1rem; display:none; padding:0.5rem; background:rgba(255,0,0,0.1); border-left:3px solid var(--accent-danger); border-radius:3px;"></div>
             
-            <label for="passwordInput" class="hud-label">Operator Code/Pass:</label>
-            <input type="password" id="passwordInput" class="hud-input" placeholder="••••••••">
-            
-            <div style="display:flex; gap:1rem; margin-top:1.5rem;">
-                <button class="btn-primary" style="flex-grow:1;" onclick="submitLogin()">Authorize</button>
-                <button class="btn-action" onclick="toggleLoginModal(false)">Cancel</button>
+            <!-- Tab Toggle Buttons -->
+            <div style="display:flex; border-bottom:1px solid var(--border-glass); margin-bottom:1.25rem; gap:1rem;">
+                <button id="btnAuthTabLogin" class="hud-mono" style="background:none; border:none; border-bottom:2px solid var(--accent-cyan); color:var(--accent-cyan); padding:0.5rem 0.25rem; font-size:0.85rem; cursor:pointer;" onclick="switchAuthTab('login')">LOGIN</button>
+                <button id="btnAuthTabRegister" class="hud-mono" style="background:none; border:none; border-bottom:2px solid transparent; color:var(--text-muted); padding:0.5rem 0.25rem; font-size:0.85rem; cursor:pointer;" onclick="switchAuthTab('register')">REGISTER OPERATOR</button>
+            </div>
+
+            <!-- LOGIN FORM PANEL -->
+            <div id="panelAuthLogin">
+                <label for="usernameInput" class="hud-label" style="margin-top:0;">Operator Email / Username:</label>
+                <input type="text" id="usernameInput" class="hud-input" placeholder="e.g. admin@reserve.org or admin">
+                
+                <label for="passwordInput" class="hud-label">Operator Code/Pass:</label>
+                <input type="password" id="passwordInput" class="hud-input" placeholder="••••••••">
+                
+                <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+                    <button class="btn-primary" style="flex-grow:1;" onclick="submitLogin()">Authorize</button>
+                    <button class="btn-action" onclick="toggleLoginModal(false)">Cancel</button>
+                </div>
+            </div>
+
+            <!-- REGISTRATION FORM PANEL -->
+            <div id="panelAuthRegister" style="display:none;">
+                <label for="regUsernameInput" class="hud-label" style="margin-top:0;">Operator Username:</label>
+                <input type="text" id="regUsernameInput" class="hud-input" placeholder="e.g. john_doe">
+
+                <label for="regEmailInput" class="hud-label">Operator Email:</label>
+                <input type="email" id="regEmailInput" class="hud-input" placeholder="e.g. john@reserve.org">
+                
+                <label for="regPasswordInput" class="hud-label">Operator Password:</label>
+                <input type="password" id="regPasswordInput" class="hud-input" placeholder="••••••••">
+
+                <label for="regRoleInput" class="hud-label">Assigned Role:</label>
+                <select id="regRoleInput" class="hud-input" style="background:var(--bg-glass); color:var(--text-primary); padding:0.5rem;">
+                    <option value="Guest">Guest Observer</option>
+                    <option value="Ranger">Field Ranger</option>
+                    <option value="Administrator">Administrator</option>
+                </select>
+                
+                <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+                    <button class="btn-primary" style="flex-grow:1; background:var(--accent-purple); border-color:var(--accent-purple);" onclick="submitRegister()">Register Operator</button>
+                    <button class="btn-action" onclick="toggleLoginModal(false)">Cancel</button>
+                </div>
             </div>
         </div>
     </div>
