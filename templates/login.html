@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Smart Wildlife Monitoring - Security Access</title>
+    <!-- Google Fonts & Material Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .login-page-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            width: 100vw;
+            padding: 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-page-container">
+        <div class="login-box card" style="max-width: 420px; width: 100%; border-top: 3px solid var(--accent-cyan);">
+            
+            <!-- Branding Header -->
+            <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:1.5rem; text-align:center;">
+                <div class="logo-icon" style="width: 46px; height: 46px; font-size: 1.25rem; margin-bottom:0.75rem;">AI</div>
+                <h2 class="hud-page-title" style="font-size:1.35rem; letter-spacing:-0.5px; margin-bottom:0.25rem;">SERENGETI MONITORING</h2>
+                <div class="hud-breadcrumb" style="font-size:0.65rem; color:var(--text-muted);">SECURITY CONTROL GATEWAY</div>
+            </div>
+            
+            <div id="loginError" style="color:var(--accent-danger); font-size:0.85rem; margin-bottom:1.25rem; display:none; padding:0.6rem; background:rgba(255,0,0,0.1); border-left:3px solid var(--accent-danger); border-radius:3px;"></div>
+            
+            <!-- Tab Toggle Buttons -->
+            <div style="display:flex; border-bottom:1px solid var(--border-glass); margin-bottom:1.5rem; gap:1.25rem;">
+                <button id="btnAuthTabLogin" class="hud-mono" style="background:none; border:none; border-bottom:2px solid var(--accent-cyan); color:var(--accent-cyan); padding:0.5rem 0.25rem; font-size:0.85rem; cursor:pointer;" onclick="switchAuthTab('login')">LOGIN</button>
+                <button id="btnAuthTabRegister" class="hud-mono" style="background:none; border:none; border-bottom:2px solid transparent; color:var(--text-muted); padding:0.5rem 0.25rem; font-size:0.85rem; cursor:pointer;" onclick="switchAuthTab('register')">REGISTER OPERATOR</button>
+            </div>
+
+            <!-- LOGIN FORM PANEL -->
+            <div id="panelAuthLogin">
+                <label for="usernameInput" class="hud-label" style="margin-top:0;">Operator Username / Email:</label>
+                <input type="text" id="usernameInput" class="hud-input" placeholder="e.g. admin@reserve.org or admin" autofocus>
+                
+                <label for="passwordInput" class="hud-label">Operator Code/Pass:</label>
+                <input type="password" id="passwordInput" class="hud-input" placeholder="••••••••">
+                
+                <div style="margin-top:1.75rem;">
+                    <button class="btn-primary" style="width:100%; padding:0.8rem;" onclick="submitLogin()">Authorize Access</button>
+                </div>
+            </div>
+
+            <!-- REGISTRATION FORM PANEL -->
+            <div id="panelAuthRegister" style="display:none;">
+                <label for="regUsernameInput" class="hud-label" style="margin-top:0;">Operator Username:</label>
+                <input type="text" id="regUsernameInput" class="hud-input" placeholder="e.g. john_doe">
+
+                <label for="regEmailInput" class="hud-label">Operator Email:</label>
+                <input type="email" id="regEmailInput" class="hud-input" placeholder="e.g. john@reserve.org">
+                
+                <label for="regPasswordInput" class="hud-label">Operator Password:</label>
+                <input type="password" id="regPasswordInput" class="hud-input" placeholder="••••••••">
+
+                <label for="regRoleInput" class="hud-label">Assigned Role:</label>
+                <select id="regRoleInput" class="hud-input" style="background:var(--bg-glass); color:var(--text-primary); padding:0.5rem;">
+                    <option value="Guest">Guest Observer</option>
+                    <option value="Ranger">Field Ranger</option>
+                    <option value="Administrator">Administrator</option>
+                </select>
+                
+                <div style="margin-top:1.75rem;">
+                    <button class="btn-primary" style="width:100%; padding:0.8rem; background:var(--accent-purple); border-color:var(--accent-purple);" onclick="submitRegister()">Register Operator</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client-side controllers -->
+    <script>
+        function switchAuthTab(tab) {
+            const btnLogin = document.getElementById("btnAuthTabLogin");
+            const btnRegister = document.getElementById("btnAuthTabRegister");
+            const panelLogin = document.getElementById("panelAuthLogin");
+            const panelRegister = document.getElementById("panelAuthRegister");
+            const errDiv = document.getElementById("loginError");
+
+            if (errDiv) errDiv.style.display = "none";
+
+            if (tab === "login") {
+                if (btnLogin) {
+                    btnLogin.style.borderBottom = "2px solid var(--accent-cyan)";
+                    btnLogin.style.color = "var(--accent-cyan)";
+                }
+                if (btnRegister) {
+                    btnRegister.style.borderBottom = "2px solid transparent";
+                    btnRegister.style.color = "var(--text-muted)";
+                }
+                if (panelLogin) panelLogin.style.display = "block";
+                if (panelRegister) panelRegister.style.display = "none";
+                document.getElementById("usernameInput").focus();
+            } else {
+                if (btnLogin) {
+                    btnLogin.style.borderBottom = "2px solid transparent";
+                    btnLogin.style.color = "var(--text-muted)";
+                }
+                if (btnRegister) {
+                    btnRegister.style.borderBottom = "2px solid var(--accent-cyan)";
+                    btnRegister.style.color = "var(--accent-cyan)";
+                }
+                if (panelLogin) panelLogin.style.display = "none";
+                if (panelRegister) panelRegister.style.display = "block";
+                document.getElementById("regUsernameInput").focus();
+            }
+        }
+
+        function submitLogin() {
+            const userVal = document.getElementById("usernameInput").value.trim();
+            const passVal = document.getElementById("passwordInput").value.trim();
+            const errDiv = document.getElementById("loginError");
+
+            if (!userVal || !passVal) {
+                if (errDiv) {
+                    errDiv.innerText = "Please input all credentials.";
+                    errDiv.style.display = "block";
+                }
+                return;
+            }
+
+            fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: userVal, password: passVal })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    if (errDiv) {
+                        errDiv.innerText = data.error;
+                        errDiv.style.display = "block";
+                    }
+                } else {
+                    window.location.reload();
+                }
+            })
+            .catch(err => {
+                console.error("Login failed:", err);
+                if (errDiv) {
+                    errDiv.innerText = "Server communication failed.";
+                    errDiv.style.display = "block";
+                }
+            });
+        }
+
+        function submitRegister() {
+            const usernameVal = document.getElementById("regUsernameInput").value.trim();
+            const emailVal = document.getElementById("regEmailInput").value.trim();
+            const passwordVal = document.getElementById("regPasswordInput").value.trim();
+            const roleVal = document.getElementById("regRoleInput").value;
+            const errDiv = document.getElementById("loginError");
+
+            if (!usernameVal || !emailVal || !passwordVal) {
+                if (errDiv) {
+                    errDiv.innerText = "All fields are required for registration.";
+                    errDiv.style.display = "block";
+                }
+                return;
+            }
+
+            fetch("/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    username: usernameVal,
+                    email: emailVal,
+                    password: passwordVal,
+                    role: roleVal
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    if (errDiv) {
+                        errDiv.innerText = data.error;
+                        errDiv.style.display = "block";
+                    }
+                } else {
+                    window.location.reload();
+                }
+            })
+            .catch(err => {
+                console.error("Registration failed:", err);
+                if (errDiv) {
+                    errDiv.innerText = "Server communication failed.";
+                    errDiv.style.display = "block";
+                }
+            });
+        }
+
+        // Add Enter key listener to submit easily
+        document.getElementById("usernameInput").addEventListener("keypress", (e) => { if (e.key === "Enter") submitLogin(); });
+        document.getElementById("passwordInput").addEventListener("keypress", (e) => { if (e.key === "Enter") submitLogin(); });
+        document.getElementById("regUsernameInput").addEventListener("keypress", (e) => { if (e.key === "Enter") submitRegister(); });
+        document.getElementById("regEmailInput").addEventListener("keypress", (e) => { if (e.key === "Enter") submitRegister(); });
+        document.getElementById("regPasswordInput").addEventListener("keypress", (e) => { if (e.key === "Enter") submitRegister(); });
+    </script>
+</body>
+</html>

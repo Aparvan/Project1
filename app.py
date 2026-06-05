@@ -233,11 +233,29 @@ def user_status():
         })
     return jsonify({"logged_in": False, "role": "Guest"})
 
+@app.before_request
+def check_auth_required():
+    if request.path.startswith('/static/'):
+        return
+        
+    open_endpoints = ["auth_login", "auth_register", "auth_logout", "user_status", "index"]
+    if not request.endpoint or request.endpoint in open_endpoints:
+        return
+        
+    if "user_id" not in session:
+        if (request.path.startswith("/api/") or 
+            request.path.startswith("/session/") or
+            request.path in ["/detect", "/live_detections", "/sessions", "/stats", "/benchmark", "/threat_prediction", "/chat", "/webcam_feed", "/training_stream"]):
+            return jsonify({"error": "Unauthorized. Please login first."}), 401
+        return redirect(url_for("index"))
+
 # -------------------------------------------------------------
 # DETECTOR API (IMAGE & VIDEO INF)
 # -------------------------------------------------------------
 @app.route("/")
 def index():
+    if "user_id" not in session:
+        return render_template("login.html")
     return render_template("index.html")
 
 @app.route("/detect", methods=["POST"])

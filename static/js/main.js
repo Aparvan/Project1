@@ -253,8 +253,7 @@ function handleAuthToggle() {
         fetch("/logout", { method: "POST" })
             .then(res => res.json())
             .then(() => {
-                checkUserStatus();
-                loadHistory(); // Refresh buttons
+                window.location.reload();
             });
     } else {
         toggleLoginModal(true);
