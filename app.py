@@ -51,9 +51,9 @@ CAMERA_COORDINATES = {
 
 # Real-time direct MP4 urls for wildlife feeds
 VIDEO_FEED_URLS = {
-    "Cam-01": "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4", 
-    "Cam-02": "https://upload.wikimedia.org/wikipedia/commons/4/43/Escena_de_perros_en_el_agua.mp4", 
-    "Cam-03": "https://storage.googleapis.com/chromium-media-test/bear.mp4",
+    "Cam-01": "https://github.com/intel-iot-devkit/sample-videos/raw/master/person-bicycle-car-detection.mp4", 
+    "Cam-02": "https://github.com/intel-iot-devkit/sample-videos/raw/master/classroom.mp4", 
+    "Cam-03": "https://github.com/intel-iot-devkit/sample-videos/raw/master/face-demographics-walking.mp4",
     "Cam-04": "",
     "Cam-05": "",
     "Cam-06": "",
@@ -495,10 +495,15 @@ def live_detections():
 
 @app.route("/api/encyclopedia", methods=["GET"])
 def api_encyclopedia():
-    """Returns the dynamic list of seeded species in the database."""
+    """Returns the dynamic list of seeded and detected species in the database."""
     from animal_intelligence import ANIMAL_INTELLIGENCE
     species_list = []
+    added_labels = set()
+    
+    # 1. Add pre-seeded species from ANIMAL_INTELLIGENCE (excluding humans for cleaner index)
     for label, intel in ANIMAL_INTELLIGENCE.items():
+        if label in ["person", "human"]:
+            continue
         status = intel.get("conservation_status", "Least Concern")
         s_lower = status.lower()
         status_class = "lc"
@@ -514,6 +519,44 @@ def api_encyclopedia():
             "status": status,
             "class": status_class
         })
+        added_labels.add(label)
+        
+    # 2. Query unique species detected in the database and synthesize profiles if not present
+    COCO_NON_ANIMALS = {
+        'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+        'fire hydrant', 'stop sign', 'parking meter', 'bench', 'backpack', 'umbrella', 'handbag', 'tie',
+        'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove',
+        'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon',
+        'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut',
+        'cake', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse',
+        'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book',
+        'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
+    }
+    try:
+        db_labels = db.session.query(DetectedObject.label).distinct().all()
+        for row in db_labels:
+            db_label = row[0].strip().lower()
+            if db_label and db_label not in added_labels and db_label not in ["person", "human"] and db_label not in COCO_NON_ANIMALS:
+                intel = get_animal_intelligence(db_label)
+                status = intel.get("conservation_status", "Least Concern")
+                s_lower = status.lower()
+                status_class = "lc"
+                if "endangered" in s_lower:
+                    status_class = "en"
+                elif "vulnerable" in s_lower or "threatened" in s_lower:
+                    status_class = "vu"
+                    
+                species_list.append({
+                    "label": db_label,
+                    "scientific_name": intel.get("scientific_name", "Unknown"),
+                    "category": intel.get("category", "Wild Animal"),
+                    "status": status,
+                    "class": status_class
+                })
+                added_labels.add(db_label)
+    except Exception as e:
+        print(f"Error querying custom species for encyclopedia: {e}")
+        
     return jsonify(species_list)
 
 @app.route("/api/simulate_detection", methods=["POST"])
@@ -948,7 +991,7 @@ def chat():
 # -------------------------------------------------------------
 # LIVE MONITORS & VIDEO STREAM GENERATORS
 # -------------------------------------------------------------
-def gen_camera_frames(camera_id="Cam-01"):
+def gen_camera_frames(camera_id="Cam-01", species_override=""):
     """
     Streams a wildlife camera node. If a local motion video file is downloaded,
     it loops the video and runs YOLOv8 tracking on the raw frames.
@@ -973,298 +1016,384 @@ def gen_camera_frames(camera_id="Cam-01"):
     # Store dynamic tracking center coordinates for velocity vector calculations
     tracking_centers = {} # {track_id: (cx, cy)}
     
-    while True:
-        success = False
-        frame = None
-        
-        if cap and cap.isOpened():
-            success, frame = cap.read()
-            if not success and using_motion_video:
-                # Loop the motion video infinitely
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    ALLOWED_CLASSES = {
+        'person', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'
+    }
+    
+    try:
+        while True:
+            success = False
+            frame = None
+            
+            if cap and cap.isOpened():
                 success, frame = cap.read()
-            
-        if success and frame is not None:
-            # We have a valid video frame (either from local motion video or webcam)
-            frame_count += 1
-            
-            # Apply YOLOv8 Tracking on the motion frames
-            try:
-                results = model.track(frame, persist=True, conf=0.35, verbose=False)
-            except Exception:
-                results = model(frame, conf=0.35, verbose=False)
+                if not success and using_motion_video:
+                    # Loop the motion video infinitely
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    success, frame = cap.read()
                 
-            names = results[0].names
-            boxes = results[0].boxes
-            h, w = frame.shape[:2]
-            
-            active_list = []
-            
-            # HUD overlay elements on video frame
-            time_str = time.strftime("%Y-%m-%d %H:%M:%S")
-            cv2.putText(frame, f"LIVE FEED - {camera_id}", (30, 40), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 200), 2)
-            cv2.putText(frame, time_str, (w - 220, 40), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 200), 1)
-            
-            cam_gps = CAMERA_COORDINATES.get(camera_id, CAMERA_COORDINATES["Cam-01"])
-            cv2.putText(frame, f"GPS: {cam_gps['lat']:.4f}, {cam_gps['lng']:.4f}", (30, h - 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 250, 100), 1)
-            
-            if boxes is not None:
-                for box in boxes:
-                    cls_id = int(box.cls[0].item())
-                    label = names[cls_id]
-                    conf = float(box.conf[0].item())
+            if success and frame is not None:
+                # We have a valid video frame (either from local motion video or webcam)
+                frame_count += 1
+                h, w = frame.shape[:2]
+                
+                # HUD overlay elements on video frame
+                time_str = time.strftime("%Y-%m-%d %H:%M:%S")
+                cv2.putText(frame, f"LIVE FEED - {camera_id}", (30, 40), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 200), 2)
+                cv2.putText(frame, time_str, (w - 220, 40), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 200), 1)
+                
+                cam_gps = CAMERA_COORDINATES.get(camera_id, CAMERA_COORDINATES["Cam-01"])
+                cv2.putText(frame, f"GPS: {cam_gps['lat']:.4f}, {cam_gps['lng']:.4f}", (30, h - 30), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 250, 100), 1)
+                
+                active_list = []
+                
+                if species_override:
+                    # Override detection
+                    label = species_override.strip().lower()
+                    conf = 0.95
+                    track_id = 999
                     
-                    xyxy = box.xyxy[0].tolist()
-                    x1, y1, x2, y2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
-                    
-                    track_id = int(box.id[0].item()) if (box.id is not None) else (500 + len(active_list))
+                    # Make the box move horizontally to look dynamic
+                    sim_w = int(w * 0.25)
+                    sim_h = int(h * 0.3)
+                    speed = 4
+                    sim_x_val = (frame_count * speed) % (w - sim_w)
+                    x1, y1 = sim_x_val, int(h * 0.4)
+                    x2, y2 = x1 + sim_w, y1 + sim_h
                     
                     is_danger = label in Config.DANGEROUS_ANIMALS
                     color = get_bgr_color(label, is_danger)
                     
-                    # Compute velocity direction vector
-                    heading = "Stationary"
-                    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                    if track_id is not None:
-                        if track_id in tracking_centers:
-                            prev_cx, prev_cy = tracking_centers[track_id]
-                            dx, dy = cx - prev_cx, cy - prev_cy
-                            if abs(dx) > 3 or abs(dy) > 3:
-                                y_dir = "South" if dy > 3 else ("North" if dy < -3 else "")
-                                x_dir = "East" if dx > 3 else ("West" if dx < -3 else "")
-                                heading = f"Moving {y_dir}{x_dir}".strip()
-                                cv2.arrowedLine(frame, (prev_cx, prev_cy), (cx, cy), (0, 255, 255), 2, tipLength=0.35)
-                        tracking_centers[track_id] = (cx, cy)
-                    
-                    # Bounding Box HUD tag
-                    tag = f"{label.upper()} #{track_id} {conf:.2f}"
-                    if heading != "Stationary":
-                        tag += f" ({heading})"
-                        
+                    tag = f"{label.upper()} #{track_id} {conf:.2f} (Moving East)"
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(frame, tag, (x1, y1 - 8), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
-                    
-                    age = "Adult" if conf > 0.65 else "Juvenile"
-                    health = "Healthy / Active" if conf > 0.55 else "Limping / Dehydrated"
                     
                     active_list.append({
                         "label": label,
                         "confidence": conf,
                         "tracking_id": track_id,
-                        "age": age,
-                        "health": health,
-                        "heading": heading,
+                        "age": "Adult",
+                        "health": "Healthy / Active",
+                        "heading": "Moving East",
                         "intelligence": get_animal_intelligence(label)
                     })
                     
-                    # Log real-time danger alerts
-                    if is_danger and conf > 0.55:
+                    # Log danger alerts if predator
+                    if is_danger:
                         with app.app_context():
                             latest_alert = DangerAlert.query.filter_by(label=label).order_by(DangerAlert.created_at.desc()).first()
                             if not latest_alert or (time.time() - latest_alert.created_at.timestamp() > 10):
                                 alert = DangerAlert(label=label, confidence=conf)
                                 db.session.add(alert)
                                 db.session.commit()
-                                
-            _live_camera_detections[camera_id] = active_list
-            time.sleep(0.04) # Cap loop speed
-            
-        else:
-            # Fallback to high-fidelity grid simulator if files/webcam are offline
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
-            frame_count += 1
-            
-            # HUD backdrop
-            for i in range(0, 640, 80):
-                cv2.line(frame, (i, 0), (i, 480), (10, 25, 15), 1)
-            for j in range(0, 480, 60):
-                cv2.line(frame, (0, j), (640, j), (10, 25, 15), 1)
-                
-            time_str = time.strftime("%Y-%m-%d %H:%M:%S")
-            cv2.putText(frame, f"LIVE FEED - {camera_id} [MOCK]", (30, 40), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 200), 2)
-            cv2.putText(frame, time_str, (420, 40), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 200), 1)
-            
-            if int((time.time() * 2) % 2) == 0:
-                cv2.circle(frame, (600, 75), 8, (0, 0, 255), -1)
-                cv2.putText(frame, "REC", (550, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
-                
-            cam_gps = CAMERA_COORDINATES.get(camera_id, CAMERA_COORDINATES["Cam-01"])
-            cv2.putText(frame, f"GPS: {cam_gps['lat']:.4f}, {cam_gps['lng']:.4f}", (30, 440), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 150, 100), 1)
-            
-            active_list = []
-            
-            if camera_id == "Cam-01":
-                cv2.putText(frame, "Location: Water Hole [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + sim_dir_x) % 500
-                if sim_x < 20 or sim_x > 480: sim_dir_x *= -1
-                
-                cv2.rectangle(frame, (sim_x, 150), (sim_x + 120, 280), (0, 255, 0), 2)
-                cv2.putText(frame, f"Cow #102 0.89", (sim_x, 140), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
-                
-                active_list.append({
-                    "label": "cow",
-                    "confidence": 0.89,
-                    "tracking_id": 102,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": "Moving East" if sim_dir_x > 0 else "Moving West",
-                    "intelligence": get_animal_intelligence("cow")
-                })
-                
-            elif camera_id == "Cam-02":
-                cv2.putText(frame, "Location: Ranger Post [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + 2) % 450
-                cv2.rectangle(frame, (sim_x, 220), (sim_x + 80, 310), (0, 255, 255), 2)
-                cv2.putText(frame, f"Dog #201 0.94", (sim_x, 210), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 2)
-                
-                active_list.append({
-                    "label": "dog",
-                    "confidence": 0.94,
-                    "tracking_id": 201,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": "Moving East",
-                    "intelligence": get_animal_intelligence("dog")
-                })
-                
-            elif camera_id == "Cam-03":
-                cv2.putText(frame, "Location: Sector-3 Canopy [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + sim_dir_x) % 450
-                if sim_x <= 50 or sim_x >= 400: 
-                    sim_dir_x *= -1
+                else:
+                    # Apply YOLOv8 Tracking on the motion frames
+                    try:
+                        results = model.track(frame, persist=True, conf=0.35, verbose=False)
+                    except Exception:
+                        results = model(frame, conf=0.35, verbose=False)
+                        
+                    names = results[0].names
+                    boxes = results[0].boxes
                     
-                heading_txt = "Heading East" if sim_dir_x > 0 else "Heading West"
-                cv2.rectangle(frame, (sim_x, 120), (sim_x + 160, 300), (0, 0, 255), 2)
-                cv2.putText(frame, f"Bear #309 0.96 ({heading_txt})", (sim_x, 110), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
-                
-                arrow_start = (sim_x + 80, 210)
-                arrow_end = (sim_x + 80 + sim_dir_x * 12, 210)
-                cv2.arrowedLine(frame, arrow_start, arrow_end, (0, 0, 255), 3, tipLength=0.4)
-                
-                active_list.append({
-                    "label": "bear",
-                    "confidence": 0.96,
-                    "tracking_id": 309,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": heading_txt,
-                    "intelligence": get_animal_intelligence("bear")
-                })
-                
-                if frame_count % 90 == 0:
-                    with app.app_context():
-                        latest_alert = DangerAlert.query.filter_by(label="bear").order_by(DangerAlert.created_at.desc()).first()
-                        if not latest_alert or (time.time() - latest_alert.created_at.timestamp() > 10):
-                            alert = DangerAlert(
-                                label="bear",
-                                confidence=0.96,
-                                session_id=None
-                            )
-                            db.session.add(alert)
-                            db.session.commit()
-
-            elif camera_id == "Cam-04":
-                cv2.putText(frame, "Location: Corbett Tiger Reserve [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + 1) % 450
-                cv2.rectangle(frame, (sim_x, 180), (sim_x + 130, 310), (0, 255, 0), 2)
-                cv2.putText(frame, f"Tiger #402 0.92", (sim_x, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
-                active_list.append({
-                    "label": "tiger",
-                    "confidence": 0.92,
-                    "tracking_id": 402,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": "Moving East",
-                    "intelligence": get_animal_intelligence("tiger")
-                })
-                
-            elif camera_id == "Cam-05":
-                cv2.putText(frame, "Location: Amazon Canopy [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + 2) % 450
-                cv2.rectangle(frame, (sim_x, 140), (sim_x + 100, 240), (255, 120, 0), 2)
-                cv2.putText(frame, f"Parrot #505 0.88", (sim_x, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 120, 0), 2)
-                active_list.append({
-                    "label": "parrot",
-                    "confidence": 0.88,
-                    "tracking_id": 505,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": "Moving East",
-                    "intelligence": get_animal_intelligence("parrot")
-                })
-                
-            elif camera_id == "Cam-06":
-                cv2.putText(frame, "Location: Yellowstone Grizzly Trail [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + sim_dir_x) % 450
-                if sim_x < 20 or sim_x > 430: sim_dir_x *= -1
-                cv2.rectangle(frame, (sim_x, 160), (sim_x + 150, 300), (0, 0, 255), 2)
-                cv2.putText(frame, f"Grizzly Bear #601 0.95", (sim_x, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
-                active_list.append({
-                    "label": "bear",
-                    "confidence": 0.95,
-                    "tracking_id": 601,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": "Moving East" if sim_dir_x > 0 else "Moving West",
-                    "intelligence": get_animal_intelligence("bear")
-                })
-                
-            elif camera_id == "Cam-07":
-                cv2.putText(frame, "Location: Kangaroo Island [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + 3) % 450
-                cv2.rectangle(frame, (sim_x, 200), (sim_x + 90, 290), (0, 255, 0), 2)
-                cv2.putText(frame, f"Kangaroo #703 0.91", (sim_x, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
-                active_list.append({
-                    "label": "kangaroo",
-                    "confidence": 0.91,
-                    "tracking_id": 703,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": "Moving East",
-                    "intelligence": get_animal_intelligence("kangaroo")
-                })
-                
-            elif camera_id == "Cam-08":
-                cv2.putText(frame, "Location: Svalbard Outpost [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
-                sim_x = (sim_x + sim_dir_x) % 450
-                if sim_x < 20 or sim_x > 430: sim_dir_x *= -1
-                cv2.rectangle(frame, (sim_x, 150), (sim_x + 140, 290), (0, 0, 255), 2)
-                cv2.putText(frame, f"Polar Bear #802 0.98", (sim_x, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
-                active_list.append({
-                    "label": "bear",
-                    "confidence": 0.98,
-                    "tracking_id": 802,
-                    "age": "Adult",
-                    "health": "Healthy / Active",
-                    "heading": "Moving East" if sim_dir_x > 0 else "Moving West",
-                    "intelligence": get_animal_intelligence("bear")
-                })
+                    if boxes is not None:
+                        for box in boxes:
+                            cls_id = int(box.cls[0].item())
+                            label = names[cls_id]
                             
-            _live_camera_detections[camera_id] = active_list
-            time.sleep(0.04)
-            
-        ret, buffer = cv2.imencode('.jpg', frame)
-        frame_bytes = buffer.tobytes()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-               
-    if cap:
-        cap.release()
+                            # Filter to allowed classes only
+                            if label not in ALLOWED_CLASSES:
+                                continue
+                                
+                            conf = float(box.conf[0].item())
+                            
+                            xyxy = box.xyxy[0].tolist()
+                            x1, y1, x2, y2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
+                            
+                            track_id = int(box.id[0].item()) if (box.id is not None) else (500 + len(active_list))
+                            
+                            is_danger = label in Config.DANGEROUS_ANIMALS
+                            color = get_bgr_color(label, is_danger)
+                            
+                            # Compute velocity direction vector
+                            heading = "Stationary"
+                            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                            if track_id is not None:
+                                if track_id in tracking_centers:
+                                    prev_cx, prev_cy = tracking_centers[track_id]
+                                    dx, dy = cx - prev_cx, cy - prev_cy
+                                    if abs(dx) > 3 or abs(dy) > 3:
+                                        y_dir = "South" if dy > 3 else ("North" if dy < -3 else "")
+                                        x_dir = "East" if dx > 3 else ("West" if dx < -3 else "")
+                                        heading = f"Moving {y_dir}{x_dir}".strip()
+                                        cv2.arrowedLine(frame, (prev_cx, prev_cy), (cx, cy), (0, 255, 255), 2, tipLength=0.35)
+                                tracking_centers[track_id] = (cx, cy)
+                            
+                            # Bounding Box HUD tag
+                            tag = f"{label.upper()} #{track_id} {conf:.2f}"
+                            if heading != "Stationary":
+                                tag += f" ({heading})"
+                                
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                            cv2.putText(frame, tag, (x1, y1 - 8), 
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+                            
+                            age = "Adult" if conf > 0.65 else "Juvenile"
+                            health = "Healthy / Active" if conf > 0.55 else "Limping / Dehydrated"
+                            
+                            active_list.append({
+                                "label": label,
+                                "confidence": conf,
+                                "tracking_id": track_id,
+                                "age": age,
+                                "health": health,
+                                "heading": heading,
+                                "intelligence": get_animal_intelligence(label)
+                            })
+                            
+                            # Log real-time danger alerts
+                            if is_danger and conf > 0.55:
+                                with app.app_context():
+                                    latest_alert = DangerAlert.query.filter_by(label=label).order_by(DangerAlert.created_at.desc()).first()
+                                    if not latest_alert or (time.time() - latest_alert.created_at.timestamp() > 10):
+                                        alert = DangerAlert(label=label, confidence=conf)
+                                        db.session.add(alert)
+                                        db.session.commit()
+                                        
+                _live_camera_detections[camera_id] = active_list
+                time.sleep(0.04) # Cap loop speed
+                
+            else:
+                # Fallback to high-fidelity grid simulator if files/webcam are offline
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                frame_count += 1
+                
+                # HUD backdrop
+                for i in range(0, 640, 80):
+                    cv2.line(frame, (i, 0), (i, 480), (10, 25, 15), 1)
+                for j in range(0, 480, 60):
+                    cv2.line(frame, (0, j), (640, j), (10, 25, 15), 1)
+                    
+                time_str = time.strftime("%Y-%m-%d %H:%M:%S")
+                cv2.putText(frame, f"LIVE FEED - {camera_id} [MOCK]", (30, 40), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 200), 2)
+                cv2.putText(frame, time_str, (420, 40), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 200), 1)
+                
+                if int((time.time() * 2) % 2) == 0:
+                    cv2.circle(frame, (600, 75), 8, (0, 0, 255), -1)
+                    cv2.putText(frame, "REC", (550, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)
+                    
+                cam_gps = CAMERA_COORDINATES.get(camera_id, CAMERA_COORDINATES["Cam-01"])
+                cv2.putText(frame, f"GPS: {cam_gps['lat']:.4f}, {cam_gps['lng']:.4f}", (30, 440), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 150, 100), 1)
+                
+                active_list = []
+                
+                if species_override:
+                    # Overridden mock simulation
+                    label = species_override.strip().lower()
+                    conf = 0.95
+                    track_id = 999
+                    
+                    sim_x = (sim_x + 3) % 450
+                    is_danger = label in Config.DANGEROUS_ANIMALS
+                    color = (0, 0, 255) if is_danger else (0, 255, 0)
+                    
+                    cv2.rectangle(frame, (sim_x, 150), (sim_x + 120, 280), color, 2)
+                    cv2.putText(frame, f"{label.upper()} #{track_id} {conf:.2f}", (sim_x, 140), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+                    
+                    active_list.append({
+                        "label": label,
+                        "confidence": conf,
+                        "tracking_id": track_id,
+                        "age": "Adult",
+                        "health": "Healthy / Active",
+                        "heading": "Moving East",
+                        "intelligence": get_animal_intelligence(label)
+                    })
+                    
+                    if is_danger and frame_count % 90 == 0:
+                        with app.app_context():
+                            latest_alert = DangerAlert.query.filter_by(label=label).order_by(DangerAlert.created_at.desc()).first()
+                            if not latest_alert or (time.time() - latest_alert.created_at.timestamp() > 10):
+                                alert = DangerAlert(label=label, confidence=conf)
+                                db.session.add(alert)
+                                db.session.commit()
+                else:
+                    if camera_id == "Cam-01":
+                        cv2.putText(frame, "Location: Water Hole [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + sim_dir_x) % 500
+                        if sim_x < 20 or sim_x > 480: sim_dir_x *= -1
+                        
+                        cv2.rectangle(frame, (sim_x, 150), (sim_x + 120, 280), (0, 255, 0), 2)
+                        cv2.putText(frame, f"Cow #102 0.89", (sim_x, 140), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+                        
+                        active_list.append({
+                            "label": "cow",
+                            "confidence": 0.89,
+                            "tracking_id": 102,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": "Moving East" if sim_dir_x > 0 else "Moving West",
+                            "intelligence": get_animal_intelligence("cow")
+                        })
+                        
+                    elif camera_id == "Cam-02":
+                        cv2.putText(frame, "Location: Ranger Post [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + 2) % 450
+                        cv2.rectangle(frame, (sim_x, 220), (sim_x + 80, 310), (0, 255, 255), 2)
+                        cv2.putText(frame, f"Dog #201 0.94", (sim_x, 210), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 2)
+                        
+                        active_list.append({
+                            "label": "dog",
+                            "confidence": 0.94,
+                            "tracking_id": 201,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": "Moving East",
+                            "intelligence": get_animal_intelligence("dog")
+                        })
+                        
+                    elif camera_id == "Cam-03":
+                        cv2.putText(frame, "Location: Sector-3 Canopy [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + sim_dir_x) % 450
+                        if sim_x <= 50 or sim_x >= 400: 
+                            sim_dir_x *= -1
+                            
+                        heading_txt = "Heading East" if sim_dir_x > 0 else "Heading West"
+                        cv2.rectangle(frame, (sim_x, 120), (sim_x + 160, 300), (0, 0, 255), 2)
+                        cv2.putText(frame, f"Bear #309 0.96 ({heading_txt})", (sim_x, 110), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                        
+                        arrow_start = (sim_x + 80, 210)
+                        arrow_end = (sim_x + 80 + sim_dir_x * 12, 210)
+                        cv2.arrowedLine(frame, arrow_start, arrow_end, (0, 0, 255), 3, tipLength=0.4)
+                        
+                        active_list.append({
+                            "label": "bear",
+                            "confidence": 0.96,
+                            "tracking_id": 309,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": heading_txt,
+                            "intelligence": get_animal_intelligence("bear")
+                        })
+                        
+                        if frame_count % 90 == 0:
+                            with app.app_context():
+                                latest_alert = DangerAlert.query.filter_by(label="bear").order_by(DangerAlert.created_at.desc()).first()
+                                if not latest_alert or (time.time() - latest_alert.created_at.timestamp() > 10):
+                                    alert = DangerAlert(
+                                        label="bear",
+                                        confidence=0.96,
+                                        session_id=None
+                                    )
+                                    db.session.add(alert)
+                                    db.session.commit()
+
+                    elif camera_id == "Cam-04":
+                        cv2.putText(frame, "Location: Corbett Tiger Reserve [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + 1) % 450
+                        cv2.rectangle(frame, (sim_x, 180), (sim_x + 130, 310), (0, 255, 0), 2)
+                        cv2.putText(frame, f"Tiger #402 0.92", (sim_x, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+                        active_list.append({
+                            "label": "tiger",
+                            "confidence": 0.92,
+                            "tracking_id": 402,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": "Moving East",
+                            "intelligence": get_animal_intelligence("tiger")
+                        })
+                        
+                    elif camera_id == "Cam-05":
+                        cv2.putText(frame, "Location: Amazon Canopy [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + 2) % 450
+                        cv2.rectangle(frame, (sim_x, 140), (sim_x + 100, 240), (255, 120, 0), 2)
+                        cv2.putText(frame, f"Parrot #505 0.88", (sim_x, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 120, 0), 2)
+                        active_list.append({
+                            "label": "parrot",
+                            "confidence": 0.88,
+                            "tracking_id": 505,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": "Moving East",
+                            "intelligence": get_animal_intelligence("parrot")
+                        })
+                        
+                    elif camera_id == "Cam-06":
+                        cv2.putText(frame, "Location: Yellowstone Grizzly Trail [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + sim_dir_x) % 450
+                        if sim_x < 20 or sim_x > 430: sim_dir_x *= -1
+                        cv2.rectangle(frame, (sim_x, 160), (sim_x + 150, 300), (0, 0, 255), 2)
+                        cv2.putText(frame, f"Grizzly Bear #601 0.95", (sim_x, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                        active_list.append({
+                            "label": "bear",
+                            "confidence": 0.95,
+                            "tracking_id": 601,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": "Moving East" if sim_dir_x > 0 else "Moving West",
+                            "intelligence": get_animal_intelligence("bear")
+                        })
+                        
+                    elif camera_id == "Cam-07":
+                        cv2.putText(frame, "Location: Kangaroo Island [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + 3) % 450
+                        cv2.rectangle(frame, (sim_x, 200), (sim_x + 90, 290), (0, 255, 0), 2)
+                        cv2.putText(frame, f"Kangaroo #703 0.91", (sim_x, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
+                        active_list.append({
+                            "label": "kangaroo",
+                            "confidence": 0.91,
+                            "tracking_id": 703,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": "Moving East",
+                            "intelligence": get_animal_intelligence("kangaroo")
+                        })
+                        
+                    elif camera_id == "Cam-08":
+                        cv2.putText(frame, "Location: Svalbard Outpost [Sim]", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 180, 180), 1)
+                        sim_x = (sim_x + sim_dir_x) % 450
+                        if sim_x < 20 or sim_x > 430: sim_dir_x *= -1
+                        cv2.rectangle(frame, (sim_x, 150), (sim_x + 140, 290), (0, 0, 255), 2)
+                        cv2.putText(frame, f"Polar Bear #802 0.98", (sim_x, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                        active_list.append({
+                            "label": "bear",
+                            "confidence": 0.98,
+                            "tracking_id": 802,
+                            "age": "Adult",
+                            "health": "Healthy / Active",
+                            "heading": "Moving East" if sim_dir_x > 0 else "Moving West",
+                            "intelligence": get_animal_intelligence("bear")
+                        })
+                                    
+                _live_camera_detections[camera_id] = active_list
+                time.sleep(0.04)
+                
+            ret, buffer = cv2.imencode('.jpg', frame)
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                   
+    finally:
+        if cap:
+            cap.release()
+            print(f"Released OpenCV VideoCapture resource for {camera_id}")
 
 @app.route("/webcam_feed")
 def webcam_feed():
     camera_id = request.args.get("camera", "Cam-01")
-    return Response(gen_camera_frames(camera_id), mimetype="multipart/x-mixed-replace; boundary=frame")
+    override = request.args.get("override", "").strip().lower()
+    return Response(gen_camera_frames(camera_id, species_override=override), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 @app.route("/api/webcam_detect", methods=["POST"])
 def api_webcam_detect():

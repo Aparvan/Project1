@@ -132,6 +132,27 @@ document.addEventListener("DOMContentLoaded", () => {
             hudTime.innerText = "TIME: " + new Date().toLocaleTimeString();
         }
     }, 1000);
+
+    // Reload simulated camera feed if species override is changed
+    const webcamSpeciesOverrideInput = document.getElementById("webcamSpeciesOverride");
+    if (webcamSpeciesOverrideInput) {
+        webcamSpeciesOverrideInput.addEventListener("change", () => {
+            const stream = document.getElementById("cameraStream");
+            const btnStop = document.getElementById("btnStopCamera");
+            if (btnStop && btnStop.style.display === "block" && !localWebcamStream && stream && stream.style.display !== "none") {
+                fallbackToSimulationFeed();
+            }
+        });
+        webcamSpeciesOverrideInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                const stream = document.getElementById("cameraStream");
+                const btnStop = document.getElementById("btnStopCamera");
+                if (btnStop && btnStop.style.display === "block" && !localWebcamStream && stream && stream.style.display !== "none") {
+                    fallbackToSimulationFeed();
+                }
+            }
+        });
+    }
 });
 
 function initNavigation() {
@@ -946,9 +967,11 @@ function fallbackToSimulationFeed() {
 
     if (browserWebcam) browserWebcam.style.display = "none";
     if (browserSvgOverlay) browserSvgOverlay.style.display = "none";
+    
+    const speciesOverride = document.getElementById("webcamSpeciesOverride")?.value.trim() || "";
     if (stream) {
         stream.style.display = "block";
-        stream.src = `/webcam_feed?camera=${currentCamera}`;
+        stream.src = `/webcam_feed?camera=${currentCamera}&override=${encodeURIComponent(speciesOverride)}`;
     }
 
     const statusText = document.getElementById("camHudStatus");
@@ -987,6 +1010,10 @@ function toggleWebcam(active) {
                     if (browserWebcam) {
                         browserWebcam.srcObject = mediaStream;
                         browserWebcam.style.display = "block";
+                        browserWebcam.muted = true;
+                        browserWebcam.play().catch(err => {
+                            console.warn("Error playing webcam video element:", err);
+                        });
                     }
                     if (browserSvgOverlay) {
                         browserSvgOverlay.style.display = "block";
@@ -1101,6 +1128,7 @@ function startWebcamAnalysisLoop() {
 
     webcamAnalysisInterval = setInterval(() => {
         if (video.paused || video.ended || !localWebcamStream) return;
+        if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
