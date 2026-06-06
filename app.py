@@ -16,6 +16,9 @@ from models import User, DetectionSession, DetectedObject, DangerAlert
 import yolov8_analyzer
 from animal_intelligence import get_animal_intelligence
 from model_comparer import compare_models_on_image
+from animal_distress_analyzer import AnimalDistressAnalyzer
+
+distress_analyzer = AnimalDistressAnalyzer()
 
 # BGR color maps for OpenCV drawing (BGR format)
 BGR_COLORS = {
@@ -357,7 +360,9 @@ def detect():
                                     # Draw velocity vector arrow
                                     cv2.arrowedLine(frame, (prev_cx, prev_cy), (cx, cy), (255, 255, 0), 2, tipLength=0.3)
                             tracking_centers[track_id] = (cx, cy)
-                        
+                        # Run distress analysis
+                        distress_result = distress_analyzer.analyze([x1, y1, x2, y2], track_id=track_id)
+
                         # Draw boxes and metadata HUD
                         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                         tag = f"{label.capitalize()}"
@@ -369,6 +374,17 @@ def detect():
                             
                         cv2.putText(frame, tag, (x1, y1 - 8), 
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+
+                        # Draw distress overlay
+                        cv2.putText(
+                            frame,
+                            f"{distress_result['status']} ({distress_result['distress_score']}%)",
+                            (x1, y1 - 22),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.45,
+                            (0, 0, 255) if distress_result['status'] == "HIGH DISTRESS" else ((0, 165, 255) if distress_result['status'] == "MEDIUM DISTRESS" else (0, 255, 0)),
+                            2
+                        )
                         
                         # Save unique detections for summary
                         detections_summary.append({
@@ -376,7 +392,10 @@ def detect():
                             "confidence": conf,
                             "box": [x1/width, y1/height, x2/width, y2/height],
                             "tracking_id": track_id,
-                            "heading": heading
+                            "heading": heading,
+                            "distress_score": distress_result["distress_score"],
+                            "distress_status": distress_result["status"],
+                            "distress_reasons": distress_result["reasons"]
                         })
                         
                 out.write(frame)
@@ -417,7 +436,15 @@ def detect():
                 
                 # Heuristics for intelligence metrics
                 predicted_age = "Adult" if det["confidence"] > 0.65 else "Juvenile"
-                health_status = "Healthy / Active" if det["confidence"] > 0.55 else "Limping / Dehydrated"
+                
+                distress_score = det.get("distress_score", 0)
+                distress_status = det.get("distress_status", "NORMAL")
+                reasons_str = ", ".join(det.get("distress_reasons", []))
+                
+                health_status = f"{distress_status} ({distress_score}% Distress)"
+                if reasons_str:
+                    health_status += f" - {reasons_str}"
+                health_status = health_status[:255]
                 
                 db_obj = DetectedObject(
                     session_id=session_entry.id,
@@ -448,6 +475,16 @@ def detect():
             output_detections = []
             for det in unique_detections:
                 intel = get_animal_intelligence(det["label"])
+                
+                distress_score = det.get("distress_score", 0)
+                distress_status = det.get("distress_status", "NORMAL")
+                reasons_str = ", ".join(det.get("distress_reasons", []))
+                
+                health_status = f"{distress_status} ({distress_score}% Distress)"
+                if reasons_str:
+                    health_status += f" - {reasons_str}"
+                health_status = health_status[:255]
+                
                 output_detections.append({
                     "label": det["label"],
                     "confidence": det["confidence"],
@@ -455,8 +492,11 @@ def detect():
                     "tracking_id": det["tracking_id"],
                     "heading": det["heading"],
                     "age": "Adult" if det["confidence"] > 0.65 else "Juvenile",
-                    "health": "Healthy / Active" if det["confidence"] > 0.55 else "Limping / Dehydrated",
-                    "intelligence": intel
+                    "health": health_status,
+                    "intelligence": intel,
+                    "distress_score": distress_score,
+                    "distress_status": distress_status,
+                    "distress_reasons": det.get("distress_reasons", [])
                 })
                 
             return jsonify({
@@ -503,8 +543,22 @@ def detect():
             conf = det["confidence"]
             box = det["box"]
             
+            # Scale normalized box to absolute coordinates for distress heuristics
+            x1 = int(box[0] * result.get("width", 640))
+            y1 = int(box[1] * result.get("height", 480))
+            x2 = int(box[2] * result.get("width", 640))
+            y2 = int(box[3] * result.get("height", 480))
+            
+            distress_result = distress_analyzer.analyze([x1, y1, x2, y2])
+            
             predicted_age = "Adult" if (conf + (idx * 0.05)) % 1 > 0.4 else "Sub-Adult"
-            health_status = "Healthy / Active" if conf > 0.4 else "Injured / Vulnerable"
+            
+            reasons_str = ", ".join(distress_result["reasons"])
+            health_status = f"{distress_result['status']} ({distress_result['distress_score']}% Distress)"
+            if reasons_str:
+                health_status += f" - {reasons_str}"
+            health_status = health_status[:255]
+            
             heading = "Stationary" if (idx % 2 == 0) else "Moving South"
             
             db_obj = DetectedObject(
@@ -541,7 +595,10 @@ def detect():
                 "heading": heading,
                 "age": predicted_age,
                 "health": health_status,
-                "intelligence": intel
+                "intelligence": intel,
+                "distress_score": distress_result["distress_score"],
+                "distress_status": distress_result["status"],
+                "distress_reasons": distress_result["reasons"]
             })
             
         db.session.commit()
@@ -652,7 +709,24 @@ def api_simulate_detection():
     track_id = random.randint(400, 499)
     conf = round(0.85 + random.uniform(0.01, 0.13), 2)
     age = "Adult" if conf > 0.88 else "Sub-Adult"
-    health = "Healthy / Active" if random.random() > 0.15 else "Injured / Vulnerable"
+    
+    # 20% chance of distress trigger in simulation
+    distress_triggered = random.random() < 0.20
+    if distress_triggered:
+        distress_score = random.choice([30, 45, 60, 80])
+        if distress_score >= 60:
+            distress_status = "HIGH DISTRESS"
+            reasons = ["Possible abnormal lying posture", "Sudden unstable movement"]
+        else:
+            distress_status = "MEDIUM DISTRESS"
+            reasons = ["Very low movement detected"]
+        health = f"{distress_status} ({distress_score}% Distress) - " + ", ".join(reasons)
+    else:
+        distress_score = 0
+        distress_status = "NORMAL"
+        reasons = []
+        health = "Healthy / Active"
+        
     headings = ["Moving North", "Moving South", "Moving East", "Moving West", "Stationary"]
     heading = random.choice(headings)
     
@@ -663,7 +737,10 @@ def api_simulate_detection():
         "age": age,
         "health": health,
         "heading": heading,
-        "intelligence": intel
+        "intelligence": intel,
+        "distress_score": distress_score,
+        "distress_status": distress_status,
+        "distress_reasons": reasons
     }
     
     # Store in memory cache for auto-scanner HUD
@@ -1142,19 +1219,44 @@ def gen_camera_frames(camera_id="Cam-01", species_override=""):
                     is_danger = label in Config.DANGEROUS_ANIMALS
                     color = get_bgr_color(label, is_danger)
                     
+                    # Run distress analysis
+                    distress_result = distress_analyzer.analyze([x1, y1, x2, y2], track_id=track_id)
+                    distress_status = distress_result['status']
+                    distress_score = distress_result['distress_score']
+                    reasons_str = ", ".join(distress_result["reasons"])
+                    
+                    health = f"{distress_status} ({distress_score}% Distress)"
+                    if reasons_str:
+                        health += f" - {reasons_str}"
+                    health = health[:255]
+
                     tag = f"{label.upper()} #{track_id} {conf:.2f} (Moving East)"
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(frame, tag, (x1, y1 - 8), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+                    
+                    # Draw distress overlay
+                    cv2.putText(
+                        frame,
+                        f"{distress_status} ({distress_score}%)",
+                        (x1, y1 - 22),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.45,
+                        (0, 0, 255) if distress_status == "HIGH DISTRESS" else ((0, 165, 255) if distress_status == "MEDIUM DISTRESS" else (0, 255, 0)),
+                        1
+                    )
                     
                     active_list.append({
                         "label": label,
                         "confidence": conf,
                         "tracking_id": track_id,
                         "age": "Adult",
-                        "health": "Healthy / Active",
+                        "health": health,
                         "heading": "Moving East",
-                        "intelligence": get_animal_intelligence(label)
+                        "intelligence": get_animal_intelligence(label),
+                        "distress_score": distress_score,
+                        "distress_status": distress_status,
+                        "distress_reasons": distress_result["reasons"]
                     })
                     
                     # Log danger alerts if predator
@@ -1208,6 +1310,18 @@ def gen_camera_frames(camera_id="Cam-01", species_override=""):
                                         cv2.arrowedLine(frame, (prev_cx, prev_cy), (cx, cy), (0, 255, 255), 2, tipLength=0.35)
                                 tracking_centers[track_id] = (cx, cy)
                             
+                            # Run distress analysis
+                            distress_result = distress_analyzer.analyze([x1, y1, x2, y2], track_id=track_id)
+                            
+                            distress_status = distress_result['status']
+                            distress_score = distress_result['distress_score']
+                            reasons_str = ", ".join(distress_result["reasons"])
+                            
+                            health = f"{distress_status} ({distress_score}% Distress)"
+                            if reasons_str:
+                                health += f" - {reasons_str}"
+                            health = health[:255]
+
                             # Bounding Box HUD tag
                             tag = f"{label.upper()} #{track_id} {conf:.2f}"
                             if heading != "Stationary":
@@ -1216,9 +1330,19 @@ def gen_camera_frames(camera_id="Cam-01", species_override=""):
                             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                             cv2.putText(frame, tag, (x1, y1 - 8), 
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+
+                            # Draw distress overlay
+                            cv2.putText(
+                                frame,
+                                f"{distress_status} ({distress_score}%)",
+                                (x1, y1 - 22),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.45,
+                                (0, 0, 255) if distress_status == "HIGH DISTRESS" else ((0, 165, 255) if distress_status == "MEDIUM DISTRESS" else (0, 255, 0)),
+                                1
+                            )
                             
                             age = "Adult" if conf > 0.65 else "Juvenile"
-                            health = "Healthy / Active" if conf > 0.55 else "Limping / Dehydrated"
                             
                             active_list.append({
                                 "label": label,
@@ -1227,7 +1351,10 @@ def gen_camera_frames(camera_id="Cam-01", species_override=""):
                                 "age": age,
                                 "health": health,
                                 "heading": heading,
-                                "intelligence": get_animal_intelligence(label)
+                                "intelligence": get_animal_intelligence(label),
+                                "distress_score": distress_score,
+                                "distress_status": distress_status,
+                                "distress_reasons": distress_result["reasons"]
                             })
                             
                             # Log real-time danger alerts
@@ -1347,6 +1474,8 @@ def gen_camera_frames(camera_id="Cam-01", species_override=""):
                         cv2.rectangle(frame, (sim_x, 120), (sim_x + 160, 300), (0, 0, 255), 2)
                         cv2.putText(frame, f"Bear #309 0.96 ({heading_txt})", (sim_x, 110), 
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                        cv2.putText(frame, "MEDIUM DISTRESS (40%)", (sim_x, 96), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 2)
                         
                         arrow_start = (sim_x + 80, 210)
                         arrow_end = (sim_x + 80 + sim_dir_x * 12, 210)
@@ -1357,9 +1486,12 @@ def gen_camera_frames(camera_id="Cam-01", species_override=""):
                             "confidence": 0.96,
                             "tracking_id": 309,
                             "age": "Adult",
-                            "health": "Healthy / Active",
+                            "health": "MEDIUM DISTRESS (40%) - Very low movement detected",
                             "heading": heading_txt,
-                            "intelligence": get_animal_intelligence("bear")
+                            "intelligence": get_animal_intelligence("bear"),
+                            "distress_score": 40,
+                            "distress_status": "MEDIUM DISTRESS",
+                            "distress_reasons": ["Very low movement detected"]
                         })
                         
                         if frame_count % 90 == 0:
@@ -1441,14 +1573,19 @@ def gen_camera_frames(camera_id="Cam-01", species_override=""):
                         if sim_x < 20 or sim_x > 430: sim_dir_x *= -1
                         cv2.rectangle(frame, (sim_x, 150), (sim_x + 140, 290), (0, 0, 255), 2)
                         cv2.putText(frame, f"Polar Bear #802 0.98", (sim_x, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+                        cv2.putText(frame, "HIGH DISTRESS (60%)", (sim_x, 126), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
                         active_list.append({
                             "label": "bear",
                             "confidence": 0.98,
                             "tracking_id": 802,
                             "age": "Adult",
-                            "health": "Healthy / Active",
+                            "health": "HIGH DISTRESS (60%) - Possible abnormal lying posture",
                             "heading": "Moving East" if sim_dir_x > 0 else "Moving West",
-                            "intelligence": get_animal_intelligence("bear")
+                            "intelligence": get_animal_intelligence("bear"),
+                            "distress_score": 60,
+                            "distress_status": "HIGH DISTRESS",
+                            "distress_reasons": ["Possible abnormal lying posture"]
                         })
                                     
                 _live_camera_detections[camera_id] = active_list
@@ -1529,8 +1666,23 @@ def api_webcam_detect():
         box = det["box"]
         
         tracking_id = 900 + idx
+        
+        # Scale to absolute coordinates for distress analyzer
+        x1 = int(box[0] * result.get("width", 640))
+        y1 = int(box[1] * result.get("height", 480))
+        x2 = int(box[2] * result.get("width", 640))
+        y2 = int(box[3] * result.get("height", 480))
+        
+        distress_result = distress_analyzer.analyze([x1, y1, x2, y2], track_id=tracking_id)
+        
         age = "Adult" if conf > 0.65 else "Juvenile"
-        health = "Healthy / Active" if conf > 0.55 else "Limping / Dehydrated"
+        
+        reasons_str = ", ".join(distress_result["reasons"])
+        health = f"{distress_result['status']} ({distress_result['distress_score']}% Distress)"
+        if reasons_str:
+            health += f" - {reasons_str}"
+        health = health[:255]
+        
         heading = "Stationary"
         
         intel = get_animal_intelligence(label)
@@ -1542,7 +1694,10 @@ def api_webcam_detect():
             "age": age,
             "health": health,
             "heading": heading,
-            "intelligence": intel
+            "intelligence": intel,
+            "distress_score": distress_result["distress_score"],
+            "distress_status": distress_result["status"],
+            "distress_reasons": distress_result["reasons"]
         })
         
         # Save objects to database if logging is enabled

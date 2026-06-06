@@ -41,7 +41,7 @@ class DetectedObject(db.Model):
     # Hackathon intelligence & tracking extensions
     tracking_id = db.Column(db.Integer, nullable=True)
     predicted_age = db.Column(db.String(50), nullable=True)
-    health_status = db.Column(db.String(50), nullable=True)
+    health_status = db.Column(db.String(255), nullable=True)
     velocity_heading = db.Column(db.String(50), nullable=True)
 
 class DangerAlert(db.Model):
